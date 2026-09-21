@@ -111,6 +111,19 @@ jobs:
         shell: pwsh
         run: choco install innosetup --no-progress -y
 
+      #
+      # The sound library, before the installer script is checked rather than while it is
+      # being built.
+      #
+      # build-installer.ps1 writes these itself, which is right for a person at a keyboard
+      # - but the check that every Source in the .iss exists runs first here, and on a
+      # fresh clone the disks do not. That check is the whole point of the step, so the
+      # answer is to make the disks earlier, not to teach it to overlook a missing file.
+      #
+      - name: Write the sound library
+        shell: pwsh
+        run: .\AkaiS950Synth\build.ps1 -To Installer\staging\Disks
+
       - name: Check the installer script
         shell: pwsh
         working-directory: Installer
