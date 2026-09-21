@@ -4,6 +4,43 @@ using System.Collections.Generic;
 namespace AkaiS950Synth
 {
     /// <summary>
+    /// The wave a hard strike gets instead: a keygroup's second zone.
+    ///
+    /// The two zones inside a keygroup are velocity ALTERNATIVES, not a stack. Below the
+    /// switch the first one answers and the second is silent; at or above it, the other
+    /// way round. That is a real instrument's second voice - a piano hammer meeting the
+    /// string hard enough to change what the string does, rather than just doing it
+    /// louder - and it costs no sample, because the wave it switches to is already on the
+    /// disk being played by something else.
+    ///
+    /// WHAT A ZONE CAN AND CANNOT CHANGE
+    ///
+    /// A zone carries its own sample, tuning, filter cutoff and level, so the hard strike
+    /// can be a different waveform, brighter and louder. It does NOT carry an envelope:
+    /// the VCA and VCF envelopes belong to the keygroup and both zones share them. A hard
+    /// layer that wanted its own attack would have to be a keygroup of its own, and a
+    /// keygroup has no velocity range - it would sound at every velocity, under the soft
+    /// one rather than instead of it.
+    /// </summary>
+    internal sealed class Struck
+    {
+        public string Sample;          // the wave a hard strike plays
+        public int Transpose;          // semitones, signed
+        public int Fine;               // 1/256ths of a semitone
+        public int Loudness;           // signed trim - usually up, that being the point
+        public int? Filter;            // its own cutoff, or the layer's if left null
+
+        /// <summary>
+        /// The velocity it takes over at, 1..127.
+        ///
+        /// Below this the soft wave answers; at it and above, this one. The panel writes
+        /// 128 to mean there is no second zone at all, which is what a layer without one
+        /// gets.
+        /// </summary>
+        public int At = 80;
+    }
+
+    /// <summary>
     /// One layer of a patch: a wave, how it is tuned, how loud it sits, and - where it
     /// wants to differ - its own envelope and filter.
     ///
@@ -34,6 +71,14 @@ namespace AkaiS950Synth
         /// C3 is 60, so 48 is C2 and 72 is C4.
         /// </summary>
         public int? LowKey, HighKey;
+
+        /// <summary>
+        /// What a hard strike plays instead of <see cref="Sample"/>, if anything.
+        ///
+        /// This is the other zone of the same keygroup, so it is an alternative rather
+        /// than an addition - see <see cref="Struck"/> for what it can and cannot change.
+        /// </summary>
+        public Struck Hard;
 
         // Its own amplitude envelope, if it wants one.
         public int? A, D, S, R;
@@ -294,33 +339,37 @@ namespace AkaiS950Synth
             {
                 Disk ("BASS",
                     Hand (named, "SQ BASS", "FM BASS", "GRIT BASS", "SUB SINE",
-                                 "PLUCK", "STACK 57", "RUMBLE", "SPLIT BS"),
+                                 "PLUCK", "STACK 57", "RUMBLE", "SPLIT BS",
+                                 "VEL BASS"),
                     Cross (new[] { "SQUARE", "FM 1-2", "GRIT", "SINE", "BUZZ" },
                            "BS", "PLK", "STB")),
 
                 Disk ("LEADS",
                     Hand (named, "SAW LEAD", "FAT SAW", "SOUR LEAD", "CZ LEAD",
                                  "RING LEAD", "SYNC LEAD", "DRIFT LD", "FIFTHS",
-                                 "SPLIT LD"),
+                                 "SPLIT LD", "VEL LEAD", "VEL RING"),
                     Cross (new[] { "SAW", "SEVENTH", "PD SINE", "RING 2", "BENT", "DRIFT" },
                            "LD", "STB")),
 
                 Disk ("PADS",
                     Hand (named, "SWEEP PAD", "EVOLVER", "PWM STRGS", "SWELL",
-                                 "BREATHY", "UNSTABLE", "DISSOLVE", "FIFTHS UP"),
+                                 "BREATHY", "UNSTABLE", "DISSOLVE", "FIFTHS UP",
+                                 "VEL SWEEP"),
                     Cross (new[] { "MORPH SS", "EVOLVE", "PWM", "DISSOLVE", "UNSTABLE" },
                            "PD", "SWL", "LD")),
 
                 Disk ("KEYS",
                     Hand (named, "FM EPIANO", "ORGAN", "REED ORG", "GLASS BEL",
-                                 "FM BELL", "BELL PAD", "THREE UP", "SPLIT KEY"),
+                                 "FM BELL", "BELL PAD", "THREE UP", "SPLIT KEY",
+                                 "VEL EP", "VEL BELL"),
                     Cross (new[] { "FM 1-1", "GLASS", "ORGAN", "REED", "FM BELL" },
                            "PLK", "LD", "PD")),
 
                 // The ones that are not notes so much as events and weather.
                 Disk ("TEXTURE",
                     Hand (named, "WIND", "NOISE HIT", "HAMMER", "CZ ROCKER",
-                                 "CZ BRASS", "FM STACK", "RING CLNG", "SPLIT FX"),
+                                 "CZ BRASS", "FM STACK", "RING CLNG", "SPLIT FX",
+                                 "VEL HIT"),
                     Cross (new[] { "PINK", "BROWN", "WHITE", "FM STACK", "PD ROCK" },
                            "PD", "STB", "SWL"))
             };
@@ -1057,6 +1106,139 @@ namespace AkaiS950Synth
                                     VcfAmount = 28, VcfD = 14, VcfS = 0,
                                     VelToFilter = 60, VelToLoudness = 60 }
                     }
+                },
+
+                //
+                // HARD AND SOFT: a different wave when the key is hit, not just a louder
+                // one.
+                //
+                // Velocity opening the filter is the cheap version of this and every patch
+                // here already does it. What it cannot do is change what the oscillator IS,
+                // and that is what happens on a real instrument: a string struck hard does
+                // not play its quiet tone with the treble turned up, it plays a different
+                // tone. The second zone of a keygroup gives exactly that, for the price of
+                // naming a wave the disk is already carrying.
+                //
+                // Both zones share the keygroup's envelope, so these differ in tone,
+                // tuning and level and not in attack - which is the machine's rule, not a
+                // simplification.
+                //
+                new Patch
+                {
+                    Name = "VEL BASS",
+                    Layers = new[]
+                    {
+                        new Layer { Sample = "SQUARE",
+                                    Hard = new Struck { Sample = "GRIT", At = 76,
+                                                        Filter = 62, Loudness = 2 } }
+                    },
+                    Filter = 44, KeyToFilter = 28,
+                    A = 0, D = 36, S = 20, R = 16,
+                    VcfAmount = 20, VcfD = 30, VcfS = 10,
+                    VelToFilter = 40, VelToLoudness = 45
+                },
+
+                //
+                // Lean on it and it goes sour: the seventh is a third of a semitone below
+                // the note a keyboard would play for it, so the hard strike arrives with a
+                // beat in it that the soft one does not have.
+                //
+                new Patch
+                {
+                    Name = "VEL LEAD",
+                    Layers = new[]
+                    {
+                        new Layer { Sample = "SAW",
+                                    Hard = new Struck { Sample = "SEVENTH", At = 88,
+                                                        Filter = 84, Loudness = 2 } }
+                    },
+                    Filter = 74, A = 0, D = 34, S = 84, R = 26,
+                    VcfAmount = 12, VcfD = 44, VcfS = 45, VelToFilter = 30,
+                    LfoRate = 44, LfoDepth = 4, LfoDelay = 70
+                },
+
+                // Right at the top of the range, so it is something you have to mean.
+                new Patch
+                {
+                    Name = "VEL RING",
+                    Layers = new[]
+                    {
+                        new Layer { Sample = "BENT",
+                                    Hard = new Struck { Sample = "RING 2", At = 104,
+                                                        Filter = 88, Loudness = 3 } }
+                    },
+                    Filter = 70, A = 0, D = 36, S = 80, R = 24,
+                    VcfAmount = 16, VcfD = 44, VcfS = 40, VelToFilter = 35
+                },
+
+                new Patch
+                {
+                    Name = "VEL SWEEP",
+                    Layers = new[]
+                    {
+                        new Layer { Sample = "PWM", Fine = -6,
+                                    Hard = new Struck { Sample = "DISSOLVE", At = 90,
+                                                        Fine = -6, Filter = 76 } },
+
+                        new Layer { Sample = "PWM", Fine = 6, Loudness = -4,
+                                    Hard = new Struck { Sample = "DISSOLVE", At = 90,
+                                                        Fine = 6, Filter = 76, Loudness = -4 } }
+                    },
+                    Filter = 64, A = 34, D = 58, S = 88, R = 56,
+                    VcfAmount = 14, VcfA = 30, VcfD = 62, VcfS = 58,
+                    LfoRate = 28, LfoDepth = 5, LfoDelay = 78
+                },
+
+                //
+                // The oldest velocity switch there is: a sine held quietly, and the FM tone
+                // when it is struck. Every digital piano of the era was doing this, and the
+                // switch is low because a player expects the tone to arrive early.
+                //
+                new Patch
+                {
+                    Name = "VEL EP",
+                    Layers = new[]
+                    {
+                        new Layer { Sample = "SINE",
+                                    Hard = new Struck { Sample = "FM 1-1", At = 64,
+                                                        Filter = 88, Loudness = 2 } }
+                    },
+                    Filter = 82, A = 0, D = 48, S = 30, R = 34,
+                    VelToLoudness = 55, VelToFilter = 25
+                },
+
+                new Patch
+                {
+                    Name = "VEL BELL",
+                    Layers = new[]
+                    {
+                        new Layer { Sample = "GLASS",
+                                    Hard = new Struck { Sample = "FM BELL", At = 96,
+                                                        Filter = 92, Loudness = 2 } },
+
+                        new Layer { Sample = "SINE", Transpose = 19, Loudness = -18 }
+                    },
+                    Filter = 86, A = 0, D = 54, S = 0, R = 48, VelToLoudness = 60
+                },
+
+                //
+                // A drum, near enough: pink air when it is brushed and a white crack when
+                // it is hit, played through whether the key is held or not.
+                //
+                new Patch
+                {
+                    Name = "VEL HIT",
+                    Layers = new[]
+                    {
+                        new Layer { Sample = "PINK",
+                                    Hard = new Struck { Sample = "WHITE", At = 72,
+                                                        Filter = 84, Loudness = 3 } }
+                    },
+                    Filter = 60, KeyToFilter = 40,
+                    A = 0, D = 18, S = 0, R = 14,
+                    VcfAmount = 26, VcfD = 14, VcfS = 0,
+                    VelToFilter = 50, VelToLoudness = 60,
+                    OneShot = true
                 }
             };
         }

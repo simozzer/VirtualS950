@@ -74,7 +74,9 @@ namespace AkaiS950Synth
                     foreach (var l in p.Layers)
                         layers.Add(l.Sample
                                    + (l.Loudness != 0 ? " " + l.Loudness.ToString("+0;-0") : "")
-                                   + Range(l));
+                                   + Range(l)
+                                   + (l.Hard != null
+                                      ? " >" + l.Hard.At + "> " + l.Hard.Sample : ""));
 
                     Console.WriteLine("    {0,-10} {1}", p.Name,
                                       string.Join(" + ", layers.ToArray()));
@@ -106,7 +108,14 @@ namespace AkaiS950Synth
 
             foreach (var p in bank.Programmes)
                 foreach (var l in p.Layers)
+                {
                     if (!wanted.Contains(l.Sample)) wanted.Add(l.Sample);
+
+                    // The hard strike's wave is a file on the disk like any other, and a
+                    // zone naming a sample that is not there plays nothing at all.
+                    if (l.Hard != null && !wanted.Contains(l.Hard.Sample))
+                        wanted.Add(l.Hard.Sample);
+                }
 
             var outp = new List<Patches.Wave>();
             foreach (var w in Patches.Waves())
@@ -206,13 +215,14 @@ namespace AkaiS950Synth
 
             int sounding = Verify(path, format);
 
-            Console.WriteLine("    -> {0}   {1} files, {2} blocks, {3} keygroups sound{4}",
+            Console.WriteLine("    -> {0}   {1} files, {2} blocks, {3} zones sound{4}",
                               path, files, disk.UsedBlocks, sounding,
                               repaired > 0 ? ", " + repaired + " pointer(s) fixed" : "");
         }
 
         /// <summary>
-        /// Read the disk back and check that every keygroup will actually play something.
+        /// Read the disk back and check that every zone will actually play something, and
+        /// return how many there are.
         ///
         /// THIS EXISTS BECAUSE IT DID NOT, ONCE
         ///
@@ -249,17 +259,41 @@ namespace AkaiS950Synth
 
                 foreach (var kg in groups)
                 {
+                    string where = e.Name.Trim() + " keygroup " + (kg.Index + 1);
+
                     var zone = kg.Zone1;
 
                     if (zone == null || !zone.InUse)
                         throw new InvalidOperationException(
-                            e.Name.Trim() + " keygroup " + (kg.Index + 1) +
-                            " has nothing in zone 1 - it would be silent");
+                            where + " has nothing in zone 1 - it would be silent");
 
                     if (!samples.Contains(zone.Name.Trim()))
                         throw new InvalidOperationException(
-                            e.Name.Trim() + " keygroup " + (kg.Index + 1) +
-                            " names '" + zone.Name.Trim() + "', which is not on this disk");
+                            where + " names '" + zone.Name.Trim() +
+                            "', which is not on this disk");
+
+                    sounding++;
+
+                    //
+                    // And the same of the second zone, when the switch says there is one.
+                    //
+                    // A switch below 128 hands every velocity at or above it to zone 2, so
+                    // a zone 2 that is empty or names a sample the disk does not have is a
+                    // hole in the keyboard: play it hard enough and nothing happens. That
+                    // is the velocity-shaped version of the bug this whole check exists
+                    // for, and it would be just as quiet.
+                    //
+                    if (kg.VelocitySwitchOff) continue;
+
+                    if (!kg.HasSecondZone)
+                        throw new InvalidOperationException(
+                            where + " switches to zone 2 at velocity " + kg.VelocitySwitch +
+                            " and has nothing there - anything harder would be silent");
+
+                    if (!samples.Contains(kg.Zone2.Name.Trim()))
+                        throw new InvalidOperationException(
+                            where + " zone 2 names '" + kg.Zone2.Name.Trim() +
+                            "', which is not on this disk");
 
                     sounding++;
                 }
@@ -296,8 +330,15 @@ namespace AkaiS950Synth
             Set(disk, prog, index, 1, layer.LowKey ?? 0);          // low key
             Set(disk, prog, index, 0, layer.HighKey ?? 127);       // high key
 
-            // 128 is how the panel says there is no second zone - no velocity can reach it.
-            Set(disk, prog, index, 2, 128);
+            //
+            // Where the second zone takes over. 128 is how the panel says there is no
+            // second zone at all - no velocity can reach it - and that is what a layer
+            // with no hard strike gets.
+            //
+            int switchAt = layer.Hard == null ? 128 : layer.Hard.At;
+            if (switchAt < 1) switchAt = 1;
+            if (switchAt > 128) switchAt = 128;
+            Set(disk, prog, index, 2, switchAt);
 
             //
             // Each layer takes the patch's settings unless it says otherwise. That is what
@@ -353,6 +394,25 @@ namespace AkaiS950Synth
             Set(disk, prog, index, 43, Signed(layer.Transpose));
             Set(disk, prog, index, 44, layer.Filter ?? p.Filter);
             Set(disk, prog, index, 45, Signed(layer.Loudness));
+
+            //
+            // Zone 2: the same four bytes, one zone stride further on. The zone record is
+            // 22 bytes and the first starts at 24, so the name is at 46 and its trim at
+            // 64..67 - which is everything up to the chain pointer at 68.
+            //
+            // Left alone when there is no hard strike. AddProgram's template writes the
+            // "2 SAMPLE" placeholder there, which is how the machine itself marks a zone
+            // unused, and the switch of 128 above means nothing would reach it anyway.
+            //
+            if (layer.Hard != null)
+            {
+                disk.SetZoneSample(prog, index, 1, layer.Hard.Sample);
+                Set(disk, prog, index, 64, layer.Hard.Fine < 0 ? 256 + layer.Hard.Fine
+                                                               : layer.Hard.Fine);
+                Set(disk, prog, index, 65, Signed(layer.Hard.Transpose));
+                Set(disk, prog, index, 66, layer.Hard.Filter ?? layer.Filter ?? p.Filter);
+                Set(disk, prog, index, 67, Signed(layer.Hard.Loudness));
+            }
         }
 
         static void Set(AkaiDisk disk, AkaiEntry prog, int index, int offset, int value)
