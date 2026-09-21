@@ -1,5 +1,89 @@
 #include "PluginEditor.h"
 
+/*
+ * Where the file browser was last pointed, kept between one disk and the next.
+ *
+ * WHY THIS IS NOT IN THE PLUGIN'S STATE
+ *
+ * A plugin's state travels with the song. A folder saved there would come back weeks
+ * later, in somebody else's session, as an answer to a question nobody had asked - and an
+ * instance freshly added to a new project would have no answer at all, which is exactly
+ * the case where being sent to the right shelf matters most. So it lives in the plugin's
+ * own settings file instead, beside the machine's other application data, where every
+ * instance in every host shares the one answer.
+ *
+ * The file is opened for each read and each write rather than held. This happens when
+ * somebody clicks a button, not in any loop, and two instances writing it at once means
+ * the later one wins - which for "the last folder" is the right answer anyway.
+ */
+namespace
+{
+    const char* const lastFolderKey = "lastDiskFolder";
+
+    std::unique_ptr<juce::PropertiesFile> pluginSettings()
+    {
+        juce::PropertiesFile::Options options;
+        options.applicationName     = "VirtualS950";
+        options.filenameSuffix      = "settings";
+        options.folderName          = "VirtualS950";
+        options.osxLibrarySubFolder = "Application Support";
+
+        return std::make_unique<juce::PropertiesFile> (options);
+    }
+
+    juce::File rememberedDiskFolder()
+    {
+        const auto path = pluginSettings()->getValue (lastFolderKey);
+        if (path.isEmpty()) return {};
+
+        const juce::File folder (path);
+        return folder.isDirectory() ? folder : juce::File();
+    }
+
+    void rememberDiskFolder (const juce::File& folder)
+    {
+        if (! folder.isDirectory()) return;
+
+        auto settings = pluginSettings();
+        settings->setValue (lastFolderKey, folder.getFullPathName());
+        settings->saveIfNeeded();
+    }
+
+    /*
+     * The sound library the installer left on this machine, if it did.
+     *
+     * First use is the case that matters: somebody has just installed this, has never owned
+     * an S950 floppy in their life, and presses Load disk. Sending them to an empty Documents
+     * folder invites the conclusion that the plugin is broken. Sending them to the disks that
+     * were installed alongside it means the first thing they do makes a noise.
+     *
+     * The path comes from the installer rather than being guessed at, because {app} is the
+     * user's choice and Program Files is only the default.
+     */
+    juce::File installedLibrary()
+    {
+       #if JUCE_WINDOWS
+        // Per-user install first, then machine-wide - the order Inno's HKA resolves in.
+        const char* const keys[] =
+        {
+            "HKEY_CURRENT_USER\\Software\\VirtualS950\\DiskLibrary",
+            "HKEY_LOCAL_MACHINE\\Software\\VirtualS950\\DiskLibrary"
+        };
+
+        for (const auto* key : keys)
+        {
+            const auto path = juce::WindowsRegistry::getValue (key);
+            if (path.isEmpty()) continue;
+
+            const juce::File folder (path);
+            if (folder.isDirectory()) return folder;
+        }
+       #endif
+
+        return {};
+    }
+}
+
 VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
@@ -63,9 +147,37 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
  */
 void VirtualS950Editor::openDisk()
 {
-    // Somewhere useful to start, so there is no navigating on the first try.
-    auto start = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                     .getChildFile ("S950 images");
+    /*
+     * Somewhere useful to start, in the order somebody would guess:
+     *
+     *   - beside the disk this instance already has open, that being the shelf the next
+     *     one is nearly always on;
+     *   - otherwise wherever a disk was last chosen from, in any instance and any host;
+     *   - otherwise the sound library the installer put on this machine, which is the
+     *     first-use answer: somebody who has never held an S950 floppy still has disks;
+     *   - otherwise the folder the Studio writes its images to;
+     *   - otherwise Documents, which is always there.
+     *
+     * Each is taken only if it still exists, so a folder on a drive that has since been
+     * unplugged falls through to the next answer rather than opening the browser on
+     * nothing.
+     */
+    juce::File start;
+
+    const auto openNow = processor.getDiskPath();
+    if (openNow.isNotEmpty())
+    {
+        const auto beside = juce::File (openNow).getParentDirectory();
+        if (beside.isDirectory()) start = beside;
+    }
+
+    if (! start.isDirectory()) start = rememberedDiskFolder();
+
+    if (! start.isDirectory()) start = installedLibrary();
+
+    if (! start.isDirectory())
+        start = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                    .getChildFile ("S950 images");
 
     if (! start.isDirectory())
         start = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
@@ -84,6 +196,15 @@ void VirtualS950Editor::openDisk()
     {
         const auto file = fc.getResult();
         if (file == juce::File()) return;
+
+        //
+        // Remembered before the load is attempted rather than after it.
+        //
+        // A file that turns out not to be a disk this can read is still where the person
+        // was looking, and sending them back through six folders to try the one next to it
+        // is the opposite of helpful. Cancelling leaves no file and so changes nothing.
+        //
+        rememberDiskFolder (file.getParentDirectory());
 
         juce::String error;
 

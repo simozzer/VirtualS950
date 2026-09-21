@@ -87,6 +87,15 @@ public:
     /// The disk that is open, or an empty string.
     juce::String getDiskName() const;
 
+    /*
+     * Where that disk was read from, or an empty string.
+     *
+     * The editor opens its file browser next to it, the next disk being nearly always on
+     * the same shelf as the last. Message thread only: this is written when a disk is
+     * loaded and when the host restores a saved set, both of which happen there.
+     */
+    juce::String getDiskPath() const { return diskPath; }
+
     /// How the recovery went, for a disk read out of an .hfe. Zero for a plain image.
     int getBadSectors() const;
     int getMissingSectors() const;

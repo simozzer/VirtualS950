@@ -2,6 +2,41 @@
 
 The S950 engine as a VST3, so a programme off a real disk can be played from a DAW.
 
+## Using it
+
+The installer puts the VST3 in the folder hosts scan and the standalone player in the
+program group. If your DAW has already scanned its plugin folders, tell it to rescan;
+**VirtualS950** then appears under instruments.
+
+**Load a disk.** Press **Load disk…** and pick an `.hfe` or `.img`. The browser opens
+*inside* the plugin window rather than as a system dialog — a native chooser goes to the
+primary display, and a plugin opened on a second monitor would put its file browser where
+nobody is looking, which from the DAW is indistinguishable from a button that does nothing.
+It starts beside the disk already open, or the folder a disk was last chosen from, or the
+sound library the installer left on the machine, whichever it finds first.
+
+**Change programme** either in the plugin's own box or in the host's program selector — the
+disk's programmes are offered to the host as the plugin's programs, so in Ableton Live the
+Program chooser in the device title bar changes sound without opening the window.
+
+**A saved song carries the disk.** The whole 800K image goes into the project, gzipped, not
+a path to it: a few hundred kilobytes beside the audio a session already holds, and a set
+that can never lose the sound it was made with. Move the image, rename it, or open the song
+on another machine — it still plays. The programme comes back by name first and by position
+second, so a disk edited and reordered since still returns what you meant.
+
+**Gain is the only parameter the host automates.** Everything else about the sound belongs
+to the disk, this being a sampler: the programme *is* the patch. To change one, edit the
+image in the Studio, save it, and load the saved image here.
+
+Eight voices, as the machine had. A ninth note takes a voice that is already releasing
+before it takes one still held. The voice count in the window is there because it answers
+the first question anyone asks of a plugin making no noise — is it getting the notes? —
+without a debugger.
+
+`docs/tutorial.html` in the installed folder has the same ground with the editor's half
+as well.
+
 ## Where this has got to
 
 `Source/S950` is the engine, ported from `AkaiS950Engine` and depending on nothing but the

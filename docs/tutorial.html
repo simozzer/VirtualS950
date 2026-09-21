@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A walk through Akai S950 Studio</title>
+<style>
+  :root {
+    --ink:   #1b1b1b;
+    --paper: #fbfbf9;
+    --rule:  #d8d5cc;
+    --quiet: #5c5a54;
+    --mark:  #7a3b00;
+    --panel: #f2f0ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink:   #e6e4de;
+      --paper: #1a1a19;
+      --rule:  #3a3936;
+      --quiet: #a6a39a;
+      --mark:  #e0a566;
+      --panel: #232320;
+    }
+  }
+  html { background: var(--paper); }
+  body {
+    color: var(--ink);
+    background: var(--paper);
+    font: 16px/1.62 "Segoe UI", system-ui, sans-serif;
+    margin: 0 auto;
+    padding: 40px 20px 96px;
+    max-width: 44rem;
+  }
+  h1 { font-size: 1.85rem; line-height: 1.25; margin: 0 0 .3em; }
+  h2 { font-size: 1.3rem; margin: 2.4em 0 .6em; padding-top: .8em; border-top: 1px solid var(--rule); }
+  h3 { font-size: 1.05rem; margin: 1.8em 0 .4em; }
+  p, ul, ol { margin: 0 0 1em; }
+  li { margin: .35em 0; }
+  code, kbd {
+    font: .88em/1 ui-monospace, Consolas, monospace;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: .1em .35em;
+  }
+  kbd { white-space: nowrap; }
+  .lede { color: var(--quiet); font-size: 1.05rem; }
+  .note {
+    background: var(--panel);
+    border-left: 3px solid var(--mark);
+    padding: .8em 1em;
+    margin: 1.4em 0;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  strong { color: var(--mark); font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+  th, td { text-align: left; padding: .4em .6em; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  /* The first column of these tables is a term, not a sentence: let it keep its line. */
+  th { font-weight: 600; white-space: nowrap; width: 1%; }
+  footer { margin-top: 3em; padding-top: 1em; border-top: 1px solid var(--rule); color: var(--quiet); font-size: .9rem; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+
+<h1>A walk through Akai S950 Studio</h1>
+
+<p class="lede">Open a disk, listen to what is on it, change something, and write a new
+image you can put on a Gotek. It assumes nothing about the S950 beyond having one, or
+wanting to make disks for one.</p>
+
+<p>Nothing leaves your machine. Every image you open is read on your own computer, and
+<strong>the file you opened is never modified</strong> — the program writes a new one.</p>
+
+<div class="note">
+<p><strong>Back up your images first.</strong> This writes a new image rather than altering
+the original, but the copy you put on your Gotek replaces what was there, and a backup is
+the only thing that makes a mistake undoable.</p>
+</div>
+
+<h2>1. Open a disk</h2>
+
+<p><strong>Open images</strong> on the toolbar, or <kbd>Ctrl</kbd>+<kbd>O</kbd>. Both
+containers are read: the <code>.hfe</code> that archived floppies come in, and the raw 800K
+<code>.img</code>. Either can be written back out.</p>
+
+<p>Whole shelves at a time: <strong>File &rarr; Open Folder</strong>
+(<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>) opens every image in a folder at once, and
+<strong>Add Image</strong> adds one to what is already open without closing anything.</p>
+
+<p>Or start with nothing. <strong>New image</strong> makes an empty 800K disk, ready to
+fill — it is marked unsaved from the moment it appears, because it exists only in this
+program until you write it.</p>
+
+<h2>2. What you are looking at</h2>
+
+<p>The tree on the left lists what is on each disk, grouped into <strong>programs</strong>
+and <strong>samples</strong>. A disk with unsaved changes carries a <code>*</code>. The
+status bar says whether every sector read cleanly, which is worth a glance — a disk with
+bad sectors is telling you something.</p>
+
+<p>Click a program and the right-hand side fills in:</p>
+
+<ul>
+  <li><strong>The header strip</strong>: the program's name, its own editable fields —
+      MIDI program, key to loudness, crossfade — and then the facts. A program says
+      everything it has to say in one line.</li>
+  <li><strong>The keyboard.</strong> Every keygroup's range is washed pale and the selected
+      one is solid. Click a key to hear that keygroup's sample <em>at that key's pitch</em>,
+      using the same varispeed the sampler uses.</li>
+  <li><strong>The keygroup list</strong> down the left, each naming its sample. A keygroup
+      whose sample is not on this disk is marked, because that is a keygroup that will play
+      nothing.</li>
+  <li><strong>The editor</strong>: both envelopes, the key range and velocity, the filter,
+      the LFO, and the two zones with their samples and tuning.</li>
+  <li><strong>The waveform</strong> along the bottom with its transport and tools beside it,
+      showing the sample the selected keygroup plays, with the start, loop and end markers
+      drawn.</li>
+</ul>
+
+<h3>Programs, keygroups and zones</h3>
+
+<p>Three words that are easy to muddle, and the whole machine turns on them:</p>
+
+<table>
+  <tr><th>A program</th><td>is the sound you select. It holds keygroups.</td></tr>
+  <tr><th>A keygroup</th><td>is a range of keys with its own envelopes, filter and vibrato.
+      Keygroups whose ranges overlap all sound together — that is how a bell sits on top of
+      a pad, and how a split works when they do not overlap.</td></tr>
+  <tr><th>A zone</th><td>is one of two samples <em>inside</em> a keygroup. They are velocity
+      alternatives, not a layer: below the velocity switch the first answers, at it and
+      above the second does. A switch of 128 means there is no second zone at all.</td></tr>
+</table>
+
+<h2>3. Hear it</h2>
+
+<p>Select a sample and press <strong>Play</strong>, or <kbd>Ctrl</kbd>+<kbd>P</kbd>;
+<kbd>Ctrl</kbd>+<kbd>.</kbd> stops. On a program, clicking the keyboard plays the keygroup
+under that key.</p>
+
+<p><strong>Play &rarr; Play on Selection</strong> auditions each thing as you click it in
+the tree. It is off by default, on purpose: it is useful when you are hunting through a
+disk and maddening when you are editing one.</p>
+
+<h2>4. Change something</h2>
+
+<p>Drag an envelope corner, or move a slider. Nearly every parameter is a slider because
+these are things you sweep by ear rather than numbers you arrive knowing: it writes as it
+moves, the whole drag counts as one undo, and <strong>Undo</strong>
+(<kbd>Ctrl</kbd>+<kbd>Z</kbd>) and <strong>Redo</strong> (<kbd>Ctrl</kbd>+<kbd>Y</kbd>) work
+throughout.</p>
+
+<p>Edits are held in memory. The disk in the tree gets its <code>*</code>, and nothing
+touches the file on your drive until you save.</p>
+
+<h3>Several keygroups at once</h3>
+
+<p><kbd>Ctrl</kbd>-click adds a keygroup to the selection and <kbd>Shift</kbd>-click takes
+the run. The editor shows the one you clicked last, and every control then writes to all of
+them — one undo, however many it touches. That is how one filter setting goes across a whole
+drum kit without typing it eight times.</p>
+
+<h3>A key range, by pointing at it</h3>
+
+<p>Two boxes wanting MIDI note numbers are a poor way to say something the keyboard says
+better. Press <strong>From keyboard</strong>, beside the key range, then click the low key
+and the high one. The keys shade as you move between them, the same key twice gives a
+one-key group, the clicks work in either order, and <kbd>Esc</kbd> cancels.</p>
+
+<h2>5. Find a loop</h2>
+
+<p>Select a sample and press <strong>Find loop</strong> under the waveform.</p>
+
+<p>The S950 holds a loop as an <strong>end point and a length</strong>, and plays
+<code>end - length .. end</code> round and round. So the only thing to find is how far back
+the loop restarts, and the tool looks for the point whose approach matches the approach to
+the end — that being the join your ear actually hears.</p>
+
+<p>It reports a <strong>match</strong> between &minus;1 and 1 and says what to expect of it:
+inaudible above 0.95, audible below about 0.8, and hopeless on material with no repeating
+part in it. Applause and running water have no clean loop, and the number says so rather
+than pretending.</p>
+
+<p><strong>The loop end is a choice, and it matters.</strong> A sample meant to be held has
+a tail after its loop — the release you hear when the key comes up. Loop to the very end of
+the sample and that release plays round and round with none of it left to hear. The waveform
+is clickable: put the end where you want it, and the loop is found backwards from there.</p>
+
+<h2>6. Cut it about</h2>
+
+<p>The rest of the buttons under the waveform:</p>
+
+<ul>
+  <li><strong>Slice</strong> (<kbd>Ctrl</kbd>+<kbd>L</kbd>) finds the hits in a break, cuts
+      the sample at them, and can map the pieces to consecutive keys of a program in the same
+      step. Drag <em>Sensitivity</em> and watch the cut points move. The summary line is the
+      important part: it costs directory slots, disk blocks <em>and</em> sampler memory, and
+      it tells you what each will cost before you commit — the sampler's memory being the one
+      thing the disk cannot tell you about, so say which machine you have.</li>
+  <li><strong>Trim silence</strong> takes it off both ends and moves the markers with the
+      audio. Silence is anything below about &minus;48&nbsp;dB, so a tail that fades into
+      noise is kept — that is audio, not silence. If the sample loops, the cut stops at the
+      loop end rather than reaching into the loop, and the confirmation says when that
+      happened.</li>
+  <li><strong>Halve rate</strong> trades the top octave of bandwidth for half the blocks,
+      which is what you do when a disk will not quite hold what you want on it.</li>
+  <li><strong>Fit to tempo</strong> stretches or compresses in time without moving the
+      pitch, for getting a break to a bar length.</li>
+</ul>
+
+<p>There is no way to select a region of the waveform and delete it — the trim is the whole
+of it. If you need to cut something out of the middle, that is not here yet.</p>
+
+<h2>7. Add your own sample</h2>
+
+<p><strong>Add sample</strong> (<kbd>Ctrl</kbd>+<kbd>I</kbd>) reads WAV, MP3, FLAC, AAC, Ogg
+and the rest, and converts to the S950's 12-bit format. You choose the sample rate, the
+nominal pitch, the loop mode, whether to normalise, and how much of the file to use, and
+<strong>Preview</strong> plays the converted audio before anything is written. It refuses
+outright if the result will not fit in the free blocks, and says by how much —
+<strong>Trim to Fit</strong> takes as much as will go.</p>
+
+<h2>8. Write the disk back</h2>
+
+<p><strong>Save image</strong> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) asks for a name and a
+container; <strong>Save All Modified</strong> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>)
+does every disk carrying a <code>*</code>. Copy the result to your Gotek.</p>
+
+<ul>
+  <li><strong>HFE</strong> is the usual Gotek container and carries the disk geometry inside
+      the file. Both HxC and FlashFloppy read it, so it is the safe default. When the disk
+      was opened from an HFE, its sectors are patched in place, so the bitstream around them
+      is left exactly as it was.</li>
+  <li><strong>IMG</strong> is the bare sector image — 80 cylinders, 2 sides, 5 sectors of
+      1024 bytes, 819,200 bytes. Some FlashFloppy users prefer it. Nothing is lost converting
+      between them.</li>
+</ul>
+
+<p>Converting an <code>.img</code> to <code>.hfe</code> builds the whole container from the
+sectors, and that encoder reproduces all 101 of the original library disks <strong>byte for
+byte</strong> — a converted disk is not merely readable, it is the same file the Akai drive
+wrote.</p>
+
+<h2>9. Playing it from a MIDI keyboard</h2>
+
+<p>Pick a port in <strong>MIDI in</strong> on the toolbar, choose a channel beside it,
+select a program, and play. Eight voices, with the keygroup under each note deciding the
+sample, the tuning and the whole voice — filter, envelopes and vibrato included. The same
+list is under <strong>Play &rarr; MIDI Input</strong>, and it is refilled each time it opens,
+so a keyboard plugged in after the program started is there when you go looking for it.</p>
+
+<p>Useful for hearing a program as an instrument rather than as a list, and for sending the
+same part here and to a real S950 to compare the two.</p>
+
+<p><strong>Your modwheel works.</strong> The S950 adds vibrato in proportion to it, scaled by
+a per-keygroup setting that 427 of the library's 1908 keygroups change — so a program that
+seems to have no LFO may simply be waiting for the wheel.</p>
+
+<p>The vibrato is measured rather than invented: a sine, a rate that runs from 1.8&nbsp;Hz to
+10.6 and is linear in the stored setting, a depth of about 1.5 cents a unit, and a delay that
+fades the wobble in rather than waiting and then starting it.</p>
+
+<p><strong>Edits are heard as you make them.</strong> Move the filter while a note is
+sounding and the note changes — it is not retriggered, it takes up the new setting the way
+the machine would.</p>
+
+<h2>10. Disks made out of nothing</h2>
+
+<p>You do not need a library of floppies to have something to play. The generator that ships
+beside this program writes complete disks of synthesised sounds — every waveform worked out
+from its harmonics rather than recorded, band-limited to what the sample rate can hold, with
+programs built around them:</p>
+
+<table>
+  <tr><th>BASS</th><td>square, FM and noise-shaken basses, and a split with a lead over it</td></tr>
+  <tr><th>LEADS</th><td>saws, ring modulation, phase distortion, added fifths and sevenths</td></tr>
+  <tr><th>PADS</th><td>wavetable morphs, pulse width, things that dissolve into noise</td></tr>
+  <tr><th>KEYS</th><td>FM pianos, organs, bells, and stacks with their own envelopes</td></tr>
+  <tr><th>TEXTURE</th><td>wind, hits, hammers and weather</td></tr>
+</table>
+
+<p>Open one like any other disk. The programs named <code>SPLIT&nbsp;…</code> change sound
+with where you play, and the ones named <code>VEL&nbsp;…</code> change waveform with how hard
+you hit — a different oscillator, not the same one turned up.</p>
+
+<h2>11. The plugin</h2>
+
+<p>The same engine runs as a <strong>VST3</strong>, so a programme off a real disk can be
+played from a DAW, and as a <strong>standalone</strong> that opens without one. The installer
+puts the VST3 where hosts look for it; if your DAW has already scanned, tell it to rescan and
+<em>VirtualS950</em> will be under instruments.</p>
+
+<h3>Loading a disk</h3>
+
+<p>Press <strong>Load disk…</strong> and pick an image. The browser opens <em>inside</em> the
+plugin window rather than as a system dialog — which is deliberate: a native dialog goes to
+the primary display, and a plugin opened on a second monitor would put its file browser
+somewhere nobody was looking, which from the DAW is indistinguishable from a button that does
+nothing.</p>
+
+<p>It starts wherever you were last time: beside the disk this instance already has open, or
+the folder you last chose one from, or the sound library the installer put on your machine.</p>
+
+<h3>Changing programme</h3>
+
+<p>Two ways, and they are the same thing. The box in the plugin window lists the disk's
+programmes; so does your host's own program selector, because the disk's programmes are
+offered to the host as the plugin's programs. In Ableton Live that means the Program chooser
+in the device title bar, so you can change sound without opening the plugin window at all.</p>
+
+<h3>What a saved song remembers</h3>
+
+<p><strong>The whole disk is saved into the project</strong>, not a path to it. An 800K floppy
+compresses to a few hundred kilobytes inside the session — nothing beside the audio a song
+already holds — and it means a saved set can never lose the sound it was made with, on this
+machine or any other. Move the image, rename it, or open the song on a different computer,
+and it still plays.</p>
+
+<p>The programme comes back by <em>name</em> first and by position second, so a disk you have
+since edited and reordered still returns the programme you meant.</p>
+
+<h3>What the window shows</h3>
+
+<ul>
+  <li><strong>Gain</strong>, which is the only parameter the host automates. Everything else
+      about the sound belongs to the disk — this is a sampler, and the programme is the
+      patch.</li>
+  <li><strong>What is loaded</strong>: the disk, the programme, and for an
+      <code>.hfe</code> read off a real floppy, how the recovery went.</li>
+  <li><strong>Voices</strong>, counting what is sounding. It is there because it answers the
+      first question anyone asks of a plugin that is making no noise — is it getting the
+      notes? — without a debugger.</li>
+</ul>
+
+<p>Eight voices, as the machine had. A ninth note takes the voice of a note that is already
+releasing before it takes one still held.</p>
+
+<div class="note">
+<p><strong>To edit a disk, use the Studio.</strong> The plugin plays; it does not write. Edit
+the image here, save it, and load the saved image in the plugin — or keep the Studio open
+beside your DAW and reload after each save.</p>
+</div>
+
+<h2>If something looks wrong</h2>
+
+<p><strong>Help &rarr; About</strong> says which version is running.</p>
+
+<p>A keygroup that plays nothing is nearly always a zone naming a sample that is not on this
+disk; the keygroup list marks those. A program that plays the wrong thing on every key is
+usually a velocity switch you did not mean — check zone 2.</p>
+
+<p>If an edited disk will not load on the sampler, write it again as HFE from the original
+rather than converting a converted file, and check the status bar for read errors on the
+disk you started from.</p>
+
+<h2>The honest disclaimer</h2>
+
+<p>This is an independent tool with no connection to Akai, offered as-is and with no
+warranty. It talks to disk images on your computer, never to your sampler, so it cannot
+reach your hardware directly.</p>
+
+<p>What it <em>can</em> do is write an image your sampler does not like. The disk format was
+worked out by reading a library of 101 original disks and confirmed on a real S950, and every
+image this program produces is checked against the structures the sampler depends on — but a
+malformed image can make an S950 hang while loading. That is recoverable with a power cycle
+and a good disk, and no fun in the middle of a session. Try an edited disk before you rely on
+it, and keep that backup.</p>
+
+<footer>
+<p>Akai S950 Studio is free software under the GNU Affero General Public License v3.
+Copyright &copy; 2026 Simon Moscrop. There is a sister version of this program that runs in a
+browser; this page is the desktop walk-through of the same ground.</p>
+</footer>
+
+</body>
+</html>

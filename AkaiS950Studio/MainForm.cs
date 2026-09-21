@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
@@ -146,6 +147,18 @@ namespace AkaiS950Studio
 
             SetStatus("Open a disk image, or a folder of them, to begin.");
             UpdateCommands();
+
+            //
+            // The icon, taken back out of this program's own executable.
+            //
+            // /win32icon gives the file its icon in Explorer and on the taskbar but says
+            // nothing about the window, which keeps WinForms' default until it is told
+            // otherwise. Reading it back from the exe means there is one icon rather than
+            // two - no copy embedded as a managed resource to fall out of step with the
+            // one the shell shows.
+            //
+            try { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
+            catch { /* a build without an icon in it is not worth a dialog */ }
         }
 
         // Splitter positions only stick once the controls have a real size.
@@ -286,7 +299,12 @@ namespace AkaiS950Studio
             });
 
             var help = new ToolStripMenuItem("&Help");
-            help.DropDownItems.Add(new ToolStripMenuItem("&About", null, OnAbout));
+            help.DropDownItems.AddRange(new ToolStripItem[]
+            {
+                new ToolStripMenuItem("&Tutorial", null, OnTutorial) { ShortcutKeys = Keys.F1 },
+                new ToolStripSeparator(),
+                new ToolStripMenuItem("&About", null, OnAbout)
+            });
 
             var strip = new MenuStrip();
             strip.Items.AddRange(new ToolStripItem[] { file, edit, view, play, help });
@@ -1939,6 +1957,53 @@ namespace AkaiS950Studio
             var bad = Path.GetInvalidFileNameChars();
             var s = new string(name.Select(c => bad.Contains(c) ? '_' : c).ToArray()).Trim();
             return s.Length == 0 ? "akai-file" : s;
+        }
+
+        /// <summary>
+        /// The walk-through, opened in whatever shows HTML here.
+        ///
+        /// It ships as a file rather than a link because this program has no other
+        /// dependency on being online, and somebody reading it is quite likely to be at a
+        /// sampler in a room with a Gotek and no wifi. The web copy is the fallback for a
+        /// build running from somewhere the file did not come along to.
+        /// </summary>
+        void OnTutorial(object sender, EventArgs e)
+        {
+            const string OnTheWeb = "https://github.com/simozzer/AkaiS950Web/blob/main/docs/tutorial.md";
+
+            // Beside the program when installed, and one level up when run from the
+            // repository, where the exe is built at the root and docs sits beside it.
+            string here = Path.GetDirectoryName(Application.ExecutablePath) ?? ".";
+
+            var tried = new[]
+            {
+                Path.Combine(here, "docs", "tutorial.html"),
+                Path.Combine(here, "tutorial.html")
+            };
+
+            foreach (string path in tried)
+            {
+                if (!File.Exists(path)) continue;
+
+                try { Process.Start(path); return; }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, ex.Message, "Could not open the tutorial",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+
+            try { Process.Start(OnTheWeb); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this,
+                    "The tutorial was not installed beside the program, and the web copy " +
+                    "could not be opened either." + Environment.NewLine + Environment.NewLine +
+                    ex.Message + Environment.NewLine + Environment.NewLine + OnTheWeb,
+                    "No tutorial to show",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         void OnAbout(object sender, EventArgs e)

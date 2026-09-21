@@ -10,6 +10,17 @@ assumption the source says so.
 
 ![The editor, on a program's first keygroup](AkaiS950Studio/screenshot-keygroups.png)
 
+## Using it
+
+[**docs/tutorial.html**](docs/tutorial.html) is the walk-through: open a disk, hear it,
+change something, find a loop, slice a break, add your own sample, write an image for a
+Gotek, play it from a MIDI keyboard, and use the plugin in a DAW. The editor opens it from
+**Help → Tutorial**, or <kbd>F1</kbd>, and the installer puts it in the program group.
+
+The plugin's half is also in [Plugin/README.md](Plugin/README.md#using-it) — how a disk is
+loaded, how programmes reach the host's own selector, and what a saved song remembers
+(all of it: the whole image rides in the project).
+
 ## The parts
 
 | | |
@@ -18,6 +29,7 @@ assumption the source says so.
 | **`AkaiS950Studio`** | the editor: open a disk, look at it, change it, write it back. |
 | **`AkaiS950List`** | the format — HFE and raw images, the directory, samples, programs. |
 | **`AkaiS950Tests`** | the checks. |
+| **`AkaiS950Synth`** | a workshop tool, not part of the app: writes disks of synthesised sounds from nothing. |
 
 `AkaiS950Engine` is deliberately sealed off. It knows nothing about WinForms, nothing
 about disks, and nothing about where its notes come from; its entire interface is
@@ -45,6 +57,18 @@ that deliberately.
 The `.csproj` files are there for an IDE. There is no .NET SDK on the machine this was
 written on, so `dotnet build` has nothing to build with and the `net10.0-windows` in them
 is aspirational.
+
+The disk generator builds on its own, and deliberately not with the rest:
+
+```powershell
+.\AkaiS950Synth\build.ps1 -List            # the library it would write
+.\AkaiS950Synth\build.ps1 -To D:\disks     # write it
+```
+
+It fills S950 floppies with waveforms worked out from their harmonics — nothing is
+recorded and nothing is sampled. It has no window and no audio, it is not part of the
+Studio and is not installed with it, and the only thing it shares is `AkaiS950List`,
+because it has to write the same format.
 
 ## Checking it
 
