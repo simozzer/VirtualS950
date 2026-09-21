@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    The application icon: a rack-mount sampler, drawn rather than photographed, and
+    deliberately nobody's actual machine.
+
+    WHAT IT HAS TO SURVIVE
+
+    An icon is seen at 16 pixels far more often than at 256, and at 16 pixels everything
+    here is gone but the silhouette and three blocks of tone. So the drawing is built out of
+    large shapes with a lot of contrast between them - the dark panel, the black slot, the
+    lit display - and the detail (screws, the seam, knob pointers, the lamps) is what a
+    large rendering adds rather than what the design depends on. icon-small.svg is the same
+    object with that detail taken out, for 32 pixels and below.
+
+    The two share their outer geometry to the pixel, so Windows swapping from one to the
+    other between 32 and 40 does not make the unit appear to jump or change size.
+
+    It sits on transparency and carries a light rim, so it reads on a dark taskbar and on a
+    white Explorer background without being given a tile of its own.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"    stop-color="#4c535c"/>
+      <stop offset="0.45" stop-color="#3a414a"/>
+      <stop offset="1"    stop-color="#242a31"/>
+    </linearGradient>
+
+    <linearGradient id="ear" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#79818c"/>
+      <stop offset="1" stop-color="#4e555e"/>
+    </linearGradient>
+
+    <linearGradient id="slot" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#04060a"/>
+      <stop offset="0.6" stop-color="#0c1016"/>
+      <stop offset="1"   stop-color="#161b21"/>
+    </linearGradient>
+
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#271a04"/>
+      <stop offset="1" stop-color="#140e02"/>
+    </linearGradient>
+
+    <radialGradient id="knob" cx="0.35" cy="0.3" r="0.85">
+      <stop offset="0" stop-color="#7b838d"/>
+      <stop offset="1" stop-color="#31373e"/>
+    </radialGradient>
+  </defs>
+
+  <!-- the body: a 2U front panel, wide enough to read as rack gear at a glance -->
+  <rect x="10" y="44" width="236" height="168" rx="14" fill="url(#panel)"
+        stroke="#aab2bd" stroke-width="7"/>
+
+  <!-- the seam along the top, which is most of what says "folded steel" -->
+  <path d="M56 60 H200" stroke="#98a0ab" stroke-width="2.5" stroke-linecap="round"
+        opacity="0.5"/>
+
+  <!-- rack ears, with the four screws that hold a unit in -->
+  <g>
+    <rect x="14" y="48" width="38" height="160" rx="10" fill="url(#ear)"/>
+    <rect x="204" y="48" width="38" height="160" rx="10" fill="url(#ear)"/>
+    <path d="M52 52 V204 M204 52 V204" stroke="#1d2228" stroke-width="2.5"
+          stroke-linecap="round" opacity="0.7"/>
+
+    <g fill="#181d23" stroke="#c2c9d2" stroke-width="2">
+      <circle cx="33"  cy="82"  r="7.5"/>
+      <circle cx="33"  cy="174" r="7.5"/>
+      <circle cx="223" cy="82"  r="7.5"/>
+      <circle cx="223" cy="174" r="7.5"/>
+    </g>
+    <g stroke="#d6dce4" stroke-width="2.5" stroke-linecap="round" opacity="0.85">
+      <path d="M29 82 H37"/><path d="M29 174 H37"/>
+      <path d="M219 82 H227"/><path d="M223 170 V178"/>
+    </g>
+  </g>
+
+  <!-- the floppy slot: the one feature that dates the machine, and the one that still
+       reads when the icon is two centimetres across -->
+  <g>
+    <rect x="60" y="70" width="136" height="32" rx="6" fill="url(#slot)"
+          stroke="#080b0f" stroke-width="2"/>
+    <path d="M68 86 H176" stroke="#3b434d" stroke-width="3" stroke-linecap="round"/>
+    <rect x="180" y="78" width="9" height="16" rx="2" fill="#8a919b"/>
+  </g>
+
+  <!-- the display, lit amber, with a waveform in it because this is a sampler -->
+  <g>
+    <rect x="60" y="120" width="88" height="58" rx="5" fill="url(#screen)"
+          stroke="#0b0e12" stroke-width="2"/>
+
+    <!-- five peaks, not nine. A waveform with more detail than this stops being a
+         waveform at 48 pixels and becomes an amber stain. -->
+    <path d="M67 149 L79 149 L87 128 L97 170 L107 136 L117 158 L127 145 L142 149"
+          fill="none" stroke="#ffb040" stroke-width="4.5"
+          stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+
+  <!-- two knobs, pointing at different things so the panel looks used -->
+  <g>
+    <circle cx="164" cy="149" r="14" fill="url(#knob)" stroke="#171c22" stroke-width="2"/>
+    <path d="M164 149 V138" stroke="#eef2f7" stroke-width="3" stroke-linecap="round"/>
+
+    <circle cx="194" cy="149" r="14" fill="url(#knob)" stroke="#171c22" stroke-width="2"/>
+    <path d="M194 149 L202 142" stroke="#eef2f7" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- a row of lamps along the bottom: one lit, the rest waiting -->
+  <g>
+    <circle cx="67" cy="193" r="5" fill="#5fe392"/>
+    <circle cx="85" cy="193" r="5" fill="#333940" stroke="#525a63" stroke-width="1.5"/>
+    <circle cx="103" cy="193" r="5" fill="#333940" stroke="#525a63" stroke-width="1.5"/>
+  </g>
+</svg>

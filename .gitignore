@@ -30,3 +30,13 @@ Plugin/build/
 
 # The compiled installer. Built by Installer\build-installer.ps1 from the sources beside it.
 Installer/Output/
+
+# The icon, built from Icon\*.svg by Icon\build-icon.ps1. A binary nobody can diff drifts
+# from the drawing it came from; the drawings are the source and these are made from them,
+# on a developer's machine and again in CI.
+Icon/AkaiS950.ico
+Icon/icon-1024.png
+Icon/icon-128.png
+
+# Disk images written into the installer at packaging time by AkaiS950Synth.
+Installer/staging/

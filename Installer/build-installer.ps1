@@ -25,6 +25,11 @@ function Say($text, $colour = "Gray") { Write-Host $text -ForegroundColor $colou
 
 if (-not $SkipBuild -and -not $CheckOnly) {
     Say ""
+    Say "  drawing the icon" "Cyan"
+    & (Join-Path $repo "Icon\build-icon.ps1")
+    if ($LASTEXITCODE -ne 0) { Write-Error "the icon did not build" }
+
+    Say ""
     Say "  building the editor" "Cyan"
     & (Join-Path $repo "build.ps1")
     if ($LASTEXITCODE -ne 0) { Write-Error "the editor did not build" }
@@ -54,6 +59,28 @@ if (-not $SkipBuild -and -not $CheckOnly) {
     }
 }
 
+# ------------------------------------------------------------------- the sound library
+#
+# Written every time, -SkipBuild or not.
+#
+# These are inputs to the packaging rather than a product being tested, they take a couple
+# of seconds to make, and a stale one is undetectable: five files of the right size and
+# shape, carrying whatever the patch library said a month ago. Regenerating them is cheaper
+# than ever having to wonder.
+#
+$staging = Join-Path $here "staging\Disks"
+New-Item -ItemType Directory -Force -Path $staging | Out-Null
+Remove-Item (Join-Path $staging "*.hfe") -ErrorAction SilentlyContinue
+
+Say ""
+Say "  writing the sound library" "Cyan"
+
+& (Join-Path $repo "AkaiS950Synth\build.ps1") -To $staging | Select-String -Pattern "->|zones sound"
+if ($LASTEXITCODE -ne 0) { Write-Error "the sound library did not build" }
+
+$disks = Get-ChildItem (Join-Path $staging "*.hfe")
+if ($disks.Count -lt 1) { Write-Error "no disk images turned up in $staging" }
+
 # --------------------------------------------------------- check what the script will ship
 
 $artefacts = Join-Path $repo "Plugin\build\VirtualS950_artefacts\Release"
@@ -64,7 +91,10 @@ $wanted = @(
     @{ What = "the VST3 bundle";       Path = Join-Path $artefacts "VST3\VirtualS950.vst3" },
     @{ What = "the plugin binary";     Path = Join-Path $artefacts "VST3\VirtualS950.vst3\Contents\x86_64-win\VirtualS950.vst3" },
     @{ What = "the readme";            Path = Join-Path $repo "README.md" },
-    @{ What = "the plugin readme";     Path = Join-Path $repo "Plugin\README.md" }
+    @{ What = "the plugin readme";     Path = Join-Path $repo "Plugin\README.md" },
+    @{ What = "the tutorial";          Path = Join-Path $repo "docs\tutorial.html" },
+    @{ What = "the icon";              Path = Join-Path $repo "Icon\AkaiS950.ico" },
+    @{ What = "the sound library";     Path = Join-Path $staging "BASS.hfe" }
 )
 
 Say ""

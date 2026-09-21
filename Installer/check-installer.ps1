@@ -127,6 +127,27 @@ Write-Host ""
 
 $problems = @()
 
+# ------------------------------------------------- the [Setup] files, which are not [Files]
+#
+# SetupIconFile is a path like any other in here, but it lives in [Setup] where nothing
+# above looks, and Inno fails the compile outright if it is missing. Since it names a
+# generated artefact, "run the script that makes it" is a far better thing to be told here
+# than a compiler error in CI.
+#
+foreach ($l in $lines) {
+    if ($l.Trim() -notmatch '^(?i)(SetupIconFile|WizardImageFile|WizardSmallImageFile|LicenseFile)\s*=\s*(.+)$') { continue }
+
+    $what = $Matches[1]
+    $path = Join-Path $here (Expand $Matches[2].Trim())
+
+    if (Test-Path $path) {
+        Write-Host ("    ok    {0} -> {1}" -f $what, (Split-Path $path -Leaf)) -ForegroundColor Green
+    } else {
+        Write-Host ("    GONE  {0} -> {1}" -f $what, $path) -ForegroundColor Red
+        $problems += "$what names $path, which is not there - Inno will refuse to compile"
+    }
+}
+
 # ------------------------------------------------- every Source has to exist
 
 $installed = @()      # what ends up in {app}, so shortcuts can be checked against it
@@ -149,11 +170,18 @@ foreach ($f in $files) {
         $problems += "Source does not exist: $full"
     }
 
-    # Remember what lands in {app}, under whatever name it arrives as.
+    # Remember what lands in {app}, under whatever name it arrives as - and where.
+    #
+    # The path is kept relative to {app} rather than just the leaf, because a shortcut
+    # asks for "docs\tutorial.html" while the Files entry that installs it says
+    # DestDir {app}\docs and Source ...\tutorial.html. Matching on the name alone called
+    # a perfectly good shortcut dead, which is the one thing a check like this must not do.
     if ($dest -and $dest -match '\{app\}') {
         $name = Field $f "DestName"
         if (-not $name) { $name = Split-Path $full -Leaf }
-        $installed += $name
+
+        $sub = ($dest -replace '^\s*\{app\}', '').Trim('\').Trim()
+        if ($sub) { $installed += "$sub\$name" } else { $installed += $name }
     }
 
     # Components on a Files entry must be declared.

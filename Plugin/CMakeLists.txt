@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(VirtualS950 VERSION 0.1.0 LANGUAGES C CXX)
+project(VirtualS950 VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,11 +37,22 @@ add_subdirectory("${JUCE_PATH}" JUCE)
 set(VST3_DESTINATION "$ENV{LOCALAPPDATA}/Programs/Common/VST3"
     CACHE PATH "Where to install the built VST3")
 
+#
+# The icon, which JUCE wants as PNGs rather than as the .ico Windows executables carry -
+# it builds the platform resource itself from these. Both come out of Icon\build-icon.ps1
+# alongside the .ico, from the same two drawings, so the plugin and the editor cannot end
+# up wearing different faces.
+#
+set(ICON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Icon")
+
 juce_add_plugin(VirtualS950
     COMPANY_NAME                "simozzer"
     PRODUCT_NAME                "VirtualS950"
     PLUGIN_MANUFACTURER_CODE    Smoz
     PLUGIN_CODE                 Ak95
+
+    ICON_BIG                    "${ICON_DIR}/icon-1024.png"
+    ICON_SMALL                  "${ICON_DIR}/icon-128.png"
 
     VST3_COPY_DIR               "${VST3_DESTINATION}"
 

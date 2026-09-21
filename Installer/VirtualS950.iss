@@ -18,7 +18,7 @@
 ; does both and neither needs explaining.
 
 #define AppName        "VirtualS950"
-#define AppVersion     "0.1.0"
+#define AppVersion     "0.2.0"
 #define AppPublisher   "Simon Moscrop"
 #define AppCopyright   "Copyright (C) 2026 Simon Moscrop"
 #define AppURL         "https://github.com/simozzer/VirtualS950"
@@ -50,6 +50,11 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 
+; The setup program wears the same face as what it installs. Built by Icon\build-icon.ps1
+; from the drawings beside it, so this is an artefact and may not be there on a clean
+; checkout - which is what check-installer.ps1 will say if it is not.
+SetupIconFile={#RepoRoot}\Icon\AkaiS950.ico
+
 ; The plugin is 64-bit only, and so is the editor's build.
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -73,6 +78,7 @@ Name: "custom"; Description: "Choose what to install"; Flags: iscustom
 Name: "studio";     Description: "Akai S950 Studio - open, edit and save disk images"; Types: full custom; Flags: checkablealone
 Name: "vst3";       Description: "VST3 plugin - play disks in a DAW";                  Types: full custom; Flags: checkablealone
 Name: "standalone"; Description: "Standalone player - the plugin without a DAW";       Types: full custom; Flags: checkablealone
+Name: "sounds";     Description: "Sound library - five disks of synthesised sounds";   Types: full custom; Flags: checkablealone
 
 [Files]
 Source: "{#RepoRoot}\AkaiS950Studio.exe"; DestDir: "{app}"; Components: studio; Flags: ignoreversion
@@ -84,6 +90,23 @@ Source: "{#PluginArtefacts}\Standalone\VirtualS950.exe"; DestDir: "{app}"; Compo
 Source: "{#PluginArtefacts}\VST3\VirtualS950.vst3\*"; DestDir: "{autocf}\VST3\VirtualS950.vst3"; \
     Components: vst3; Flags: ignoreversion recursesubdirs createallsubdirs
 
+;
+; The sound library: five disk images, written by AkaiS950Synth during packaging rather
+; than carried in the repository - the same bargain the icon makes, and for a better
+; reason, since a .hfe is 2 MB of binary nobody can review.
+;
+; They matter more than their size suggests. Without them somebody who has just installed
+; this owns no S950 floppies and has nothing whatever to open, which makes a working
+; sampler look like a broken one. Ten megabytes of images compress to a few hundred
+; kilobytes inside the setup - the disks are mostly zeroes and lzma2 is told to pack them
+; as one solid block - so this costs the download almost nothing.
+;
+; Nothing is decompressed afterwards: the installer writes them out as it installs, the
+; way it writes every other file.
+;
+Source: "{#RepoRoot}\Installer\staging\Disks\*.hfe"; DestDir: "{app}\Disks"; \
+    Components: sounds; Flags: ignoreversion
+
 ; Not optional and not attached to a component: every install gets it, because the licence
 ; travels with the binaries whichever of them were chosen.
 Source: "{#RepoRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
@@ -91,8 +114,33 @@ Source: "{#RepoRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}\README.md";        DestDir: "{app}"; Flags: ignoreversion isreadme
 Source: "{#RepoRoot}\Plugin\README.md"; DestDir: "{app}"; DestName: "README-plugin.md"; Flags: ignoreversion
 
+; The walk-through, which Help -> Tutorial opens from exactly here. Not attached to a
+; component either: the plugin's section of it is as much use to somebody who installed
+; only the plugin.
+Source: "{#RepoRoot}\docs\tutorial.html"; DestDir: "{app}\docs"; Flags: ignoreversion
+
+[Registry]
+;
+; Where things went, for the parts of this that are not in {app} and cannot ask.
+;
+; The VST3 is loaded by the host, from a folder shared with every other plugin, and has no
+; idea where its installer put anything. Without this its file browser opens on Documents,
+; which for somebody who has just installed this and owns no floppies is an empty room. So
+; the installer writes down the two paths and the plugin reads them.
+;
+; HKA follows the install mode - HKCU for a per-user install, HKLM for a machine-wide one -
+; and the plugin looks in that order. uninsdeletekey takes the lot away again.
+;
+Root: HKA; Subkey: "Software\{#AppName}"; ValueType: string; ValueName: "InstallPath"; \
+    ValueData: "{app}"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\{#AppName}"; ValueType: string; ValueName: "DiskLibrary"; \
+    ValueData: "{app}\Disks"
+Root: HKA; Subkey: "Software\{#AppName}"; ValueType: string; ValueName: "Tutorial"; \
+    ValueData: "{app}\docs\tutorial.html"
+
 [Icons]
 Name: "{group}\Akai S950 Studio";        Filename: "{app}\AkaiS950Studio.exe"; Components: studio
+Name: "{group}\Tutorial";                Filename: "{app}\docs\tutorial.html"
 Name: "{group}\VirtualS950 Standalone";  Filename: "{app}\VirtualS950.exe";    Components: standalone
 Name: "{group}\Uninstall {#AppName}";    Filename: "{uninstallexe}"
 

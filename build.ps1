@@ -46,7 +46,17 @@ Write-Host "building $($src.Count) files -> $Out"
 
 # /unsafe is for one loop in WasapiOut that writes the render buffer through a float*.
 # Doing it with Marshal.Copy would mean a second buffer and a copy per callback.
-& $csc /nologo /unsafe /target:winexe /out:$Out `
+# The icon is an artefact, built from the SVGs beside it by Icon\build-icon.ps1. A build
+# without it is not worth failing over - the program runs perfectly well wearing the
+# default - so it is passed only when it is there.
+$icon = Join-Path $root "Icon\AkaiS950.ico"
+$iconArg = if (Test-Path $icon) { "/win32icon:$icon" } else { "" }
+
+if (-not (Test-Path $icon)) {
+    Write-Host "no Icon\AkaiS950.ico - run Icon\build-icon.ps1 to make one"
+}
+
+& $csc /nologo /unsafe /target:winexe /out:$Out $iconArg `
     /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll `
     $src
 

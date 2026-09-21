@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    The same rack unit for 16, 20, 24 and 32 pixels, where the large drawing turns to mud.
+
+    Downsampling the detailed icon does not produce this; it produces grey soup. What is
+    left is what survives being a dozen pixels tall: the panel, two pale ears, one black
+    slot and one lit display. Four tones, no strokes under about a pixel at 16, and a
+    waveform of three strokes rather than nine - at this size a busier one is a smear.
+
+    Geometry lines up with icon.svg so the two read as one object as Windows swaps between
+    them at 48.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+
+  <!-- the body, filling more of the square than the detailed version does: at 16 pixels
+       every wasted row of margin is 6% of the icon -->
+  <rect x="10" y="44" width="236" height="168" rx="14" fill="#3b424b"
+        stroke="#aab2bd" stroke-width="7"/>
+
+  <!-- ears, pale enough to survive as their own shape rather than merging with the panel -->
+  <rect x="16" y="50" width="40" height="156" rx="9" fill="#6b737e"/>
+  <rect x="200" y="50" width="40" height="156" rx="9" fill="#6b737e"/>
+
+  <!-- the slot: the darkest thing in the icon, and the one that says floppy -->
+  <rect x="68" y="70" width="120" height="32" rx="6" fill="#05070a"/>
+
+  <!-- the display, lit, with three strokes standing in for a waveform -->
+  <rect x="68" y="122" width="104" height="62" rx="6" fill="#1d1403"/>
+  <path d="M78 160 L98 132 L118 172 L138 142 L162 152"
+        fill="none" stroke="#ffb648" stroke-width="15"
+        stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- one knob, because two become a single grey bar -->
+  <circle cx="204" cy="153" r="23" fill="#8a929c"/>
+</svg>

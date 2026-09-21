@@ -45,6 +45,18 @@ jobs:
       # which is on every Windows runner as it is on every Windows machine since about
       # 2010 - see build.ps1 for why that was the right dependency to have.
       #
+      #
+      # The icon is an artefact built from two SVGs, so it is made here rather than
+      # committed - the same bargain as everything else generated in this repository.
+      # It needs a browser to rasterise the drawings, and the Windows runner has both
+      # Edge and Chrome; build-icon.ps1 takes whichever it finds.
+      #
+      # It runs before the editor and the plugin because both embed what it produces.
+      #
+      - name: Draw the icon
+        shell: pwsh
+        run: .\Icon\build-icon.ps1
+
       - name: Build the editor
         shell: pwsh
         run: .\build.ps1
@@ -159,6 +171,9 @@ jobs:
           - **Akai S950 Studio** - open, edit and save S900/S950 disk images (.hfe and .img)
           - **VirtualS950** - a VST3 that plays those disks in a DAW
           - **Standalone** - the same instrument without a host
+          - **A sound library** - five disks of synthesised sounds, so it makes a noise
+            without your owning a single floppy
+          - **A tutorial**, in the program group and under **Help** in the editor
 
           Each is optional, and the installer asks whether it is for everyone or just you.
 
