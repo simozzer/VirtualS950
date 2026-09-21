@@ -59,42 +59,36 @@ namespace AkaiS950Synth
 
         static void List()
         {
-            var patches = ByName();
-
             foreach (var bank in Patches.Banks())
             {
-                var waves = WavesFor(bank, patches);
+                var waves = WavesFor(bank);
 
                 Console.WriteLine();
                 Console.WriteLine("  {0}   {1} programmes + {2} samples = {3} of {4} files",
-                                  bank.Name, bank.Programmes.Length, waves.Count,
-                                  bank.Programmes.Length + waves.Count, DirectoryLimit);
+                                  bank.Name, bank.Programmes.Count, waves.Count,
+                                  bank.Programmes.Count + waves.Count, DirectoryLimit);
 
-                foreach (var name in bank.Programmes)
+                foreach (var p in bank.Programmes)
                 {
-                    Patch p;
-                    if (!patches.TryGetValue(name, out p))
-                    {
-                        Console.WriteLine("    {0,-10} MISSING", name);
-                        continue;
-                    }
-
                     var layers = new List<string>();
                     foreach (var l in p.Layers)
-                        layers.Add(l.Sample + (l.Loudness != 0 ? " " + l.Loudness.ToString("+0;-0") : ""));
+                        layers.Add(l.Sample
+                                   + (l.Loudness != 0 ? " " + l.Loudness.ToString("+0;-0") : "")
+                                   + Range(l));
 
-                    Console.WriteLine("    {0,-10} {1}", name, string.Join(" + ", layers.ToArray()));
+                    Console.WriteLine("    {0,-10} {1}", p.Name,
+                                      string.Join(" + ", layers.ToArray()));
                 }
             }
 
             Console.WriteLine();
         }
 
-        static Dictionary<string, Patch> ByName()
+        /// <summary>The part of the keyboard a layer answers to, when it is not all of it.</summary>
+        static string Range(Layer l)
         {
-            var d = new Dictionary<string, Patch>(StringComparer.OrdinalIgnoreCase);
-            foreach (var p in Patches.All()) d[p.Name] = p;
-            return d;
+            if (l.LowKey == null && l.HighKey == null) return "";
+            return " [" + (l.LowKey ?? 0) + ".." + (l.HighKey ?? 127) + "]";
         }
 
         /// <summary>
@@ -102,21 +96,17 @@ namespace AkaiS950Synth
         ///
         /// Derived rather than listed, so a disk can never be missing a sample one of its
         /// programmes refers to - which on this machine is not a warning but a keygroup
-        /// that silently plays nothing - or be carrying one that nothing plays.
+        /// that silently plays nothing - or be carrying one that nothing plays. It is also
+        /// what makes the generated programmes free: twenty of them over five waves ask
+        /// the disk for five samples.
         /// </summary>
-        static List<Patches.Wave> WavesFor(Patches.Bank bank, Dictionary<string, Patch> patches)
+        static List<Patches.Wave> WavesFor(Patches.Bank bank)
         {
             var wanted = new List<string>();
 
-            foreach (var name in bank.Programmes)
-            {
-                Patch p;
-                if (!patches.TryGetValue(name, out p))
-                    throw new InvalidOperationException("no programme called '" + name + "'");
-
+            foreach (var p in bank.Programmes)
                 foreach (var l in p.Layers)
                     if (!wanted.Contains(l.Sample)) wanted.Add(l.Sample);
-            }
 
             var outp = new List<Patches.Wave>();
             foreach (var w in Patches.Waves())
@@ -138,10 +128,9 @@ namespace AkaiS950Synth
 
         static void BuildBank(Patches.Bank bank, string folder, string format)
         {
-            var patches = ByName();
-            var waves = WavesFor(bank, patches);
+            var waves = WavesFor(bank);
 
-            int files = waves.Count + bank.Programmes.Length;
+            int files = waves.Count + bank.Programmes.Count;
             if (files > DirectoryLimit)
                 throw new InvalidOperationException(
                     bank.Name + " wants " + files + " files and a disk holds " + DirectoryLimit);
@@ -181,13 +170,23 @@ namespace AkaiS950Synth
                 Console.WriteLine("    wave  {0,-10} {1,6} words  {2,6} Hz", w.Name, words.Length, w.Rate);
             }
 
-            foreach (var name in bank.Programmes)
+            foreach (var p in bank.Programmes)
             {
-                Patch p = patches[name];
                 var prog = disk.AddProgram(p.Name, null);
 
                 // AddProgram starts a programme with one keygroup; a layer each after that.
                 for (int i = 1; i < p.Layers.Length; i++) disk.AddKeygroup(prog, 0);
+
+                //
+                // And count them, because writing to a keygroup that is not there is not an
+                // error - SetKeygroupByte simply has nowhere to put it. A three-layer patch
+                // that came out with two layers looked entirely healthy from every other
+                // angle for as long as nobody counted.
+                //
+                int have = AkaiDisk.KeygroupCount(prog);
+                if (have != p.Layers.Length)
+                    throw new InvalidOperationException(
+                        p.Name + " wanted " + p.Layers.Length + " keygroups and has " + have);
 
                 for (int i = 0; i < p.Layers.Length; i++)
                     WriteKeygroup(disk, prog, i, p, p.Layers[i]);
@@ -286,9 +285,16 @@ namespace AkaiS950Synth
 
         static void WriteKeygroup(AkaiDisk disk, AkaiEntry prog, int index, Patch p, Layer layer)
         {
-            // The whole keyboard: these are synthesiser patches, not multisamples.
-            Set(disk, prog, index, 1, 0);          // low key
-            Set(disk, prog, index, 0, 127);        // high key
+            //
+            // Which keys this layer answers to. The whole keyboard unless the layer says
+            // otherwise - most of these are synthesiser patches rather than multisamples,
+            // and a stack wants every layer under every key.
+            //
+            // Where a layer does say otherwise it is a split, and it needs nothing else:
+            // the keygroup has been a key range all along.
+            //
+            Set(disk, prog, index, 1, layer.LowKey ?? 0);          // low key
+            Set(disk, prog, index, 0, layer.HighKey ?? 127);       // high key
 
             // 128 is how the panel says there is no second zone - no velocity can reach it.
             Set(disk, prog, index, 2, 128);

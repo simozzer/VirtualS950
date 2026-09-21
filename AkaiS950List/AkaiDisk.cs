@@ -1312,6 +1312,22 @@ namespace AkaiS950List
             Image[d + 18] = (byte)((contents.Length >> 8) & 0xFF);
             Image[d + 19] = (byte)((contents.Length >> 16) & 0xFF);
 
+            //
+            // The caller's entry describes a file that is now a different length, and it
+            // is the only copy it has: ParseDirectory replaces every AkaiEntry in the
+            // list, so an entry held across an edit never hears about the change.
+            //
+            // THIS MATTERED. AddKeygroup works out how many keygroups a program has from
+            // its entry's length, so a second AddKeygroup on a held entry counted the
+            // keygroups the program had BEFORE the first one - and wrote the new keygroup
+            // over the top of it instead of after it. Every three-layer programme came out
+            // with two layers, silently, because a two-keygroup program is perfectly valid
+            // and nothing downstream had any reason to object.
+            //
+            e.Length = contents.Length;
+            e.ChainBlocks = chain.Count;
+            e.ChainOk = e.ChainBlocks >= need;
+
             Modified = true;
         }
 

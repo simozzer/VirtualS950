@@ -22,6 +22,19 @@ namespace AkaiS950Synth
         public int Fine;               // 1/256ths of a semitone - detuning, for width
         public int Loudness;           // signed trim, in the machine's decibel count
 
+        /// <summary>
+        /// Which part of the keyboard this layer answers to. The whole of it by default.
+        ///
+        /// This is what a keygroup IS - a range of keys - so a split costs nothing extra:
+        /// give one layer the bottom two octaves and another the rest, and the same
+        /// programme is a bass under the left hand and a lead under the right. Overlap them
+        /// and the overlap layers instead, which is the only difference between a split and
+        /// a stack.
+        ///
+        /// C3 is 60, so 48 is C2 and 72 is C4.
+        /// </summary>
+        public int? LowKey, HighKey;
+
         // Its own amplitude envelope, if it wants one.
         public int? A, D, S, R;
 
@@ -60,6 +73,25 @@ namespace AkaiS950Synth
         public int LfoDelay, LfoRate, LfoDepth, LfoModwheel = 50;
 
         public bool OneShot;
+
+        /// <summary>Two or three letters naming the treatment, for a generated patch.</summary>
+        public string Suffix;
+
+        /// <summary>
+        /// The same settings under a new name, around a different wave.
+        ///
+        /// A programme is a hundred-odd bytes where a sample is tens of kilobytes, so a
+        /// disk can carry a great many programmes over the same handful of waves before
+        /// it runs out of anything. That is how factory libraries were built, and it is
+        /// why a treatment is worth naming once and applying to everything.
+        /// </summary>
+        public Patch With(string name, params Layer[] layers)
+        {
+            var p = (Patch)MemberwiseClone();
+            p.Name = name;
+            p.Layers = layers;
+            return p;
+        }
     }
 
     /// <summary>
@@ -139,13 +171,90 @@ namespace AkaiS950Synth
             return s;
         }
 
+        // ---------------------------------------------------------------- treatments
+
+        /// <summary>
+        /// Ways of treating a wave, named once and applied to many.
+        ///
+        /// The envelope, the filter and the velocity response are what turn one waveform
+        /// into a lead, a pad, a bass or a stab - and none of them costs a sample. So the
+        /// waves stay few and the programmes multiply, which is both what fits on a disk
+        /// and what a player actually wants: the same oscillator, eight ways.
+        /// </summary>
+        static Patch[] Treatments()
+        {
+            return new[]
+            {
+                // Held, bright, a touch of vibrato coming in late.
+                new Patch { Suffix = "LD", Filter = 78, A = 0, D = 34, S = 86, R = 26,
+                            VcfAmount = 12, VcfD = 44, VcfS = 45, VelToFilter = 40,
+                            LfoRate = 44, LfoDepth = 4, LfoDelay = 70 },
+
+                // Slow in, slow out, the filter opening as it arrives.
+                new Patch { Suffix = "PD", Filter = 60, A = 42, D = 66, S = 88, R = 62,
+                            VcfAmount = 18, VcfA = 48, VcfD = 74, VcfS = 55,
+                            LfoRate = 26, LfoDepth = 4, LfoDelay = 80 },
+
+                // Struck and gone, with the filter falling faster than the level.
+                new Patch { Suffix = "PLK", Filter = 44, A = 0, D = 30, S = 0, R = 22,
+                            VcfAmount = 28, VcfD = 24, VcfS = 0,
+                            VelToFilter = 55, VelToLoudness = 55 },
+
+                // Low, short and stiff, with the keyboard barely opening the filter -
+                // a bass wants to sound the same at the bottom as in the middle.
+                new Patch { Suffix = "BS", Filter = 46, KeyToFilter = 28,
+                            A = 0, D = 36, S = 20, R = 16,
+                            VcfAmount = 22, VcfD = 28, VcfS = 8,
+                            VelToFilter = 48, VelToLoudness = 45 },
+
+                // Short, loud and wide open: a chord you hit rather than hold.
+                new Patch { Suffix = "STB", Filter = 88, A = 0, D = 26, S = 0, R = 18,
+                            VelToFilter = 60, VelToLoudness = 65 },
+
+                // Arrives slowly and leaves slowly, with no filter movement at all -
+                // what changes is only that it is there.
+                new Patch { Suffix = "SWL", Filter = 66, A = 62, D = 70, S = 92, R = 72,
+                            LfoRate = 18, LfoDepth = 3, LfoDelay = 88 }
+            };
+        }
+
+        /// <summary>
+        /// The S950 shows ten characters, so that is what a name gets - and where something
+        /// has to give it is the WAVE, not the treatment.
+        ///
+        /// Trimming the end instead would turn "MORPH SS PD" and "MORPH SS PLK" both into
+        /// "MORPH SS P", and two files of one name on a disk is a directory the machine
+        /// cannot read. Cutting the wave keeps the part that tells them apart.
+        /// </summary>
+        static string Named(string wave, string suffix)
+        {
+            int room = 10 - (suffix.Length + 1);
+            string w = wave.Length <= room ? wave : wave.Substring(0, room);
+            return w.TrimEnd() + " " + suffix;
+        }
+
+        /// <summary>Every one of these waves, under every one of these treatments.</summary>
+        static List<Patch> Cross(string[] waves, params string[] suffixes)
+        {
+            var all = Treatments();
+            var outp = new List<Patch>();
+
+            foreach (string wave in waves)
+                foreach (string suffix in suffixes)
+                    foreach (var t in all)
+                        if (t.Suffix == suffix)
+                            outp.Add(t.With(Named(wave, suffix), new Layer { Sample = wave }));
+
+            return outp;
+        }
+
         // --------------------------------------------------------------------- banks
 
-        /// <summary>One disk: a name and the programmes on it.</summary>
+        /// <summary>One disk: a name, and the programmes on it.</summary>
         public sealed class Bank
         {
             public string Name;
-            public string[] Programmes;
+            public List<Patch> Programmes = new List<Patch>();
         }
 
         /// <summary>
@@ -163,39 +272,99 @@ namespace AkaiS950Synth
         /// </summary>
         public static List<Bank> Banks()
         {
+            var named = new Dictionary<string, Patch>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in All()) named[p.Name] = p;
+
+            //
+            // Grouped by what a sound is FOR, not by how it was made.
+            //
+            // Splitting these by technique was the obvious thing and the wrong one: a
+            // disk is loaded because a part needs a bass, not because the player
+            // fancies some frequency modulation. So the techniques are spread across
+            // the shelf and each disk is a job - which is how factory libraries were
+            // laid out, and for the same reason.
+            //
+            // Each disk carries its hand-built programmes first and then the same few
+            // waves under every treatment. That second list is nearly free: a programme
+            // is a hundred-odd bytes where a sample is tens of kilobytes, so what fills
+            // a disk is the waves, and a wave already paid for can carry as many
+            // programmes as the directory has room for.
+            //
             return new List<Bank>
             {
-                //
-                // Grouped by what a sound is FOR, not by how it was made.
-                //
-                // Splitting these by technique was the obvious thing and the wrong one: a
-                // disk is loaded because a part needs a bass, not because the player
-                // fancies some frequency modulation. So the techniques are spread across
-                // the shelf and each disk is a job - which is how factory libraries were
-                // laid out, and for the same reason.
-                //
+                Disk ("BASS",
+                    Hand (named, "SQ BASS", "FM BASS", "GRIT BASS", "SUB SINE",
+                                 "PLUCK", "STACK 57", "RUMBLE", "SPLIT BS"),
+                    Cross (new[] { "SQUARE", "FM 1-2", "GRIT", "SINE", "BUZZ" },
+                           "BS", "PLK", "STB")),
 
-                new Bank { Name = "BASS", Programmes = new[]
-                    { "SQ BASS", "FM BASS", "GRIT BASS", "SUB SINE",
-                      "PLUCK", "STACK 57", "RUMBLE" } },
+                Disk ("LEADS",
+                    Hand (named, "SAW LEAD", "FAT SAW", "SOUR LEAD", "CZ LEAD",
+                                 "RING LEAD", "SYNC LEAD", "DRIFT LD", "FIFTHS",
+                                 "SPLIT LD"),
+                    Cross (new[] { "SAW", "SEVENTH", "PD SINE", "RING 2", "BENT", "DRIFT" },
+                           "LD", "STB")),
 
-                new Bank { Name = "LEADS", Programmes = new[]
-                    { "SAW LEAD", "FAT SAW", "SOUR LEAD", "CZ LEAD",
-                      "RING LEAD", "SYNC LEAD", "DRIFT LD", "FIFTHS" } },
+                Disk ("PADS",
+                    Hand (named, "SWEEP PAD", "EVOLVER", "PWM STRGS", "SWELL",
+                                 "BREATHY", "UNSTABLE", "DISSOLVE", "FIFTHS UP"),
+                    Cross (new[] { "MORPH SS", "EVOLVE", "PWM", "DISSOLVE", "UNSTABLE" },
+                           "PD", "SWL", "LD")),
 
-                new Bank { Name = "PADS", Programmes = new[]
-                    { "SWEEP PAD", "EVOLVER", "PWM STRGS", "SWELL",
-                      "BREATHY", "UNSTABLE", "DISSOLVE", "FIFTHS UP" } },
-
-                new Bank { Name = "KEYS", Programmes = new[]
-                    { "FM EPIANO", "ORGAN", "REED ORG", "GLASS BEL",
-                      "FM BELL", "BELL PAD", "THREE UP" } },
+                Disk ("KEYS",
+                    Hand (named, "FM EPIANO", "ORGAN", "REED ORG", "GLASS BEL",
+                                 "FM BELL", "BELL PAD", "THREE UP", "SPLIT KEY"),
+                    Cross (new[] { "FM 1-1", "GLASS", "ORGAN", "REED", "FM BELL" },
+                           "PLK", "LD", "PD")),
 
                 // The ones that are not notes so much as events and weather.
-                new Bank { Name = "TEXTURE", Programmes = new[]
-                    { "WIND", "NOISE HIT", "HAMMER", "CZ ROCKER",
-                      "CZ BRASS", "FM STACK", "RING CLNG" } }
+                Disk ("TEXTURE",
+                    Hand (named, "WIND", "NOISE HIT", "HAMMER", "CZ ROCKER",
+                                 "CZ BRASS", "FM STACK", "RING CLNG", "SPLIT FX"),
+                    Cross (new[] { "PINK", "BROWN", "WHITE", "FM STACK", "PD ROCK" },
+                           "PD", "STB", "SWL"))
             };
+        }
+
+        /// <summary>One disk: the hand-built programmes, then the generated ones.</summary>
+        static Bank Disk(string name, List<Patch> hand, List<Patch> generated)
+        {
+            var b = new Bank { Name = name };
+            b.Programmes.AddRange(hand);
+
+            //
+            // Never the same name twice. A generated name can land on a hand-built one, or
+            // on another generated one once the wave has been cut to fit, and two files of
+            // one name in a directory is not something this machine has an answer for.
+            //
+            foreach (var p in generated)
+            {
+                bool taken = false;
+                foreach (var had in b.Programmes)
+                    if (string.Equals(had.Name, p.Name, StringComparison.OrdinalIgnoreCase))
+                    { taken = true; break; }
+
+                if (!taken) b.Programmes.Add(p);
+            }
+
+            return b;
+        }
+
+        /// <summary>The hand-built programmes, by name.</summary>
+        static List<Patch> Hand(Dictionary<string, Patch> named, params string[] wanted)
+        {
+            var outp = new List<Patch>();
+
+            foreach (string name in wanted)
+            {
+                Patch p;
+                if (!named.TryGetValue(name, out p))
+                    throw new InvalidOperationException("no programme called '" + name + "'");
+
+                outp.Add(p);
+            }
+
+            return outp;
         }
 
         // --------------------------------------------------------------------- waves
@@ -777,6 +946,117 @@ namespace AkaiS950Synth
                     VcfAmount = 28, VcfD = 14, VcfS = 0,
                     VelToFilter = 60, VelToLoudness = 60,
                     OneShot = true
+                },
+
+                //
+                // SPLITS: one programme, two or three instruments, chosen by where the
+                // hands are.
+                //
+                // Nothing new is needed for this. A keygroup already IS a range of keys -
+                // it has been carrying 0..127 all along - so giving one the bottom two
+                // octaves and another the rest costs a programme nothing and a sample
+                // nothing. Where the ranges meet they simply stop; where they overlap they
+                // layer, which is the only difference between a split and a stack.
+                //
+                new Patch
+                {
+                    Name = "SPLIT BS",
+                    Layers = new[]
+                    {
+                        // Below middle C: short, closed, and barely tracking the keyboard,
+                        // so the bottom octave sounds like the one above it.
+                        new Layer { Sample = "SQUARE", HighKey = 59,
+                                    Filter = 44, KeyToFilter = 26,
+                                    A = 0, D = 34, S = 18, R = 16,
+                                    VcfAmount = 24, VcfD = 28, VcfS = 8,
+                                    VelToFilter = 50, VelToLoudness = 45 },
+
+                        // From middle C up, the right hand gets a lead instead.
+                        new Layer { Sample = "FM 1-2", LowKey = 60, Loudness = -4,
+                                    Filter = 82, A = 0, D = 36, S = 84, R = 26,
+                                    VcfAmount = 12, VcfD = 44, VcfS = 45,
+                                    VelToFilter = 40,
+                                    LfoRate = 44, LfoDepth = 4, LfoDelay = 70 }
+                    }
+                },
+
+                //
+                // Three ways up the keyboard, getting brighter as it goes - a zone change
+                // you play into rather than reach for.
+                //
+                new Patch
+                {
+                    Name = "SPLIT LD",
+                    Layers = new[]
+                    {
+                        new Layer { Sample = "SAW", HighKey = 47,
+                                    Filter = 52, KeyToFilter = 30,
+                                    A = 0, D = 40, S = 70, R = 22,
+                                    VcfAmount = 18, VcfD = 34, VcfS = 30,
+                                    VelToFilter = 45 },
+
+                        new Layer { Sample = "BENT", LowKey = 48, HighKey = 83,
+                                    Filter = 72, A = 0, D = 38, S = 82, R = 26,
+                                    VcfAmount = 16, VcfD = 44, VcfS = 45,
+                                    VelToFilter = 45,
+                                    LfoRate = 42, LfoDepth = 4, LfoDelay = 72 },
+
+                        new Layer { Sample = "PD SINE", LowKey = 84, Loudness = -4,
+                                    Filter = 92, A = 0, D = 34, S = 80, R = 24,
+                                    LfoRate = 46, LfoDepth = 5, LfoDelay = 66 }
+                    }
+                },
+
+                //
+                // Left hand holds an organ, right hand strikes a bell. Two instruments that
+                // want opposite envelopes, which is exactly what a keygroup can give them.
+                //
+                new Patch
+                {
+                    Name = "SPLIT KEY",
+                    Layers = new[]
+                    {
+                        new Layer { Sample = "REED", HighKey = 59,
+                                    Filter = 84, KeyToFilter = 25,
+                                    A = 0, D = 0, S = 99, R = 10, VelToLoudness = 15 },
+
+                        new Layer { Sample = "GLASS", LowKey = 60, Loudness = -2,
+                                    Filter = 88, A = 0, D = 50, S = 0, R = 46,
+                                    VelToLoudness = 60 },
+
+                        // The bell's octave, over the top of it and quiet - an overlap
+                        // rather than a boundary, so the top of the keyboard is a stack.
+                        new Layer { Sample = "SINE", LowKey = 72, Transpose = 12,
+                                    Loudness = -18,
+                                    Filter = 99, A = 0, D = 44, S = 0, R = 40 }
+                    }
+                },
+
+                //
+                // Weather at the bottom, events at the top: held rumble under the left
+                // hand, one-shot cracks under the right.
+                //
+                new Patch
+                {
+                    Name = "SPLIT FX",
+                    Layers = new[]
+                    {
+                        new Layer { Sample = "BROWN", HighKey = 47,
+                                    Filter = 34, KeyToFilter = 20,
+                                    A = 20, D = 70, S = 80, R = 50 },
+
+                        new Layer { Sample = "PINK", LowKey = 48, HighKey = 83,
+                                    Filter = 48, KeyToFilter = 25,
+                                    A = 30, D = 60, S = 72, R = 48,
+                                    VcfAmount = 20, VcfA = 50, VcfD = 70, VcfS = 45,
+                                    LfoRate = 12, LfoDepth = 3, LfoDelay = 70 },
+
+                        new Layer { Sample = "WHITE", LowKey = 84, Loudness = -6,
+                                    Filter = 70, KeyToFilter = 40,
+                                    A = 0, D = 16, S = 0, R = 12,
+                                    VcfAmount = 28, VcfD = 14, VcfS = 0,
+                                    VelToFilter = 60, VelToLoudness = 60 }
+                    }
                 }
             };
         }
