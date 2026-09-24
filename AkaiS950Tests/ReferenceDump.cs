@@ -75,6 +75,25 @@ static class ReferenceDump
         s.AppendLine("    };");
         s.AppendLine();
 
+        /*
+         * Every setting of the VCA attack, not every third.
+         *
+         * It is a counter, so the interesting thing about it is where it steps, and a ladder
+         * that samples one value in three would step somewhere different in the port without
+         * anything noticing. All hundred, and they are cheap.
+         */
+        s.AppendLine("    // vcaAttackSeconds (stored) -> seconds");
+        s.AppendLine("    struct VcaAttack { int stored; double seconds; };");
+        s.AppendLine();
+        s.AppendLine("    inline constexpr VcaAttack vcaAttacks[] =");
+        s.AppendLine("    {");
+
+        for (int v = 0; v <= 99; v++)
+            s.AppendLine("        { " + v + ", " + F(Cal.VcaAttackSeconds(v)) + " },");
+
+        s.AppendLine("    };");
+        s.AppendLine();
+
         // -------------------------------------------------------------------- the LFO
 
         s.AppendLine("    // the LFO rate in hertz, from the stored byte");
@@ -113,7 +132,7 @@ static class ReferenceDump
         s.AppendLine("    inline constexpr double VelOctaves           = " + F(Cal.VelOctaves) + ";");
         s.AppendLine("    inline constexpr double VelPivot             = " + F(Cal.VelPivot) + ";");
         s.AppendLine("    inline constexpr double EnvOctaves           = " + F(Cal.EnvOctaves) + ";");
-        s.AppendLine("    inline constexpr double AttackScale          = " + F(Cal.AttackScale) + ";");
+        s.AppendLine("    inline constexpr double VcaAttackSpan        = " + F(Cal.VcaAttackSpan) + ";");
         s.AppendLine("    inline constexpr double VcfTimeScale         = " + F(Cal.VcfTimeScale) + ";");
         s.AppendLine("    inline constexpr double SustainDb            = " + F(Cal.SustainDb) + ";");
         s.AppendLine("    inline constexpr double LoudnessDbPerUnit    = " + F(Cal.LoudnessDbPerUnit) + ";");

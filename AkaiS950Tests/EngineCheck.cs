@@ -64,6 +64,37 @@ static class EngineCheck
         CheckEnv(95, 8.094700);
         CheckEnv(99, 10.740100);
 
+        // The VCA attack is a counter, not a curve: 5.4/n for whole n. These are the measured
+        // settings, and the pairs that share an n are the point - 70 and 75, 80 and 85, and
+        // 90 through 99, all of which the hardware returns identical.
+        CheckAttack(30, 5.4 / 26);
+        CheckAttack(40, 5.4 / 15);
+        CheckAttack(50, 5.4 / 9);
+        CheckAttack(60, 5.4 / 6);
+        CheckAttack(70, 5.4 / 4);
+        CheckAttack(75, 5.4 / 4);
+        CheckAttack(80, 5.4 / 3);
+        CheckAttack(85, 5.4 / 3);
+        CheckAttack(90, 5.4 / 2);
+        CheckAttack(99, 5.4 / 2);
+
+        int backwards = 0, shared = 0;
+        double last = -1;
+        for (int v = 0; v <= 99; v++)
+        {
+            double t = Cal.VcaAttackSeconds(v), n = Cal.VcaAttackSpan / t;
+            if (t < last - 1e-9) backwards++;
+            else if (Math.Abs(t - last) < 1e-9) shared++;
+            if (Math.Abs(n - Math.Round(n)) > 1e-9)
+                Check("attack " + v + " is a whole number of steps", false, F(n, 4));
+            last = t;
+        }
+
+        Check("the attack never shortens as the byte rises", backwards == 0,
+              backwards + " went backwards");
+        Check("and it steps rather than sliding, being a counter", shared > 40,
+              shared + " of 99 share an attack with the one below");
+
         Check("sustain 50 is 19.8 dB down, not half",
               Near(Cal.DbToGain(-(1 - 50 / 99.0) * Cal.SustainDb), 0.104713, 0.00002),
               F(Cal.DbToGain(-(1 - 50 / 99.0) * Cal.SustainDb), 6) + ", audio.js says 0.104713");
@@ -94,6 +125,13 @@ static class EngineCheck
         double got = Cal.CutoffHz(stored, rate);
         Check("cutoff " + stored + " at " + rate + " Hz is " + F(want, 0) + " Hz",
               Near(got, want, 0.5), F(got, 3));
+    }
+
+    static void CheckAttack(int stored, double want)
+    {
+        double got = Cal.VcaAttackSeconds(stored);
+        Check("VCA attack " + stored + " is " + F(want, 4) + "s (5.4/" +
+              F(Cal.VcaAttackSpan / want, 0) + ")", Near(got, want, 1e-9), F(got, 4));
     }
 
     static void CheckEnv(int stored, double want)

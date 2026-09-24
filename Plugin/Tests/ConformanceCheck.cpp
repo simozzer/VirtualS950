@@ -77,7 +77,7 @@ namespace
         same ("VelOctaves",           s950::cal::VelOctaves,           reference::VelOctaves);
         same ("VelPivot",             s950::cal::VelPivot,             reference::VelPivot);
         same ("EnvOctaves",           s950::cal::EnvOctaves,           reference::EnvOctaves);
-        same ("AttackScale",          s950::cal::AttackScale,          reference::AttackScale);
+        same ("VcaAttackSpan",        s950::cal::VcaAttackSpan,        reference::VcaAttackSpan);
         same ("VcfTimeScale",         s950::cal::VcfTimeScale,         reference::VcfTimeScale);
         same ("SustainDb",            s950::cal::SustainDb,            reference::SustainDb);
         same ("LoudnessDbPerUnit",    s950::cal::LoudnessDbPerUnit,    reference::LoudnessDbPerUnit);
@@ -117,6 +117,43 @@ namespace
             std::snprintf (what, sizeof (what), "envSeconds %d", e.stored);
             same (what, s950::cal::envSeconds (e.stored), e.seconds, 1e-9);
         }
+
+        std::printf ("\n  the VCA attack counter, all %d settings\n",
+                     static_cast<int> (std::size (reference::vcaAttacks)));
+
+        for (const auto& a : reference::vcaAttacks)
+        {
+            char what[64];
+            std::snprintf (what, sizeof (what), "vcaAttackSeconds %d", a.stored);
+            same (what, s950::cal::vcaAttackSeconds (a.stored), a.seconds, 1e-9);
+        }
+
+        /*
+         * And that it really is a counter, which the ladder above would not notice on its
+         * own: a port that interpolated smoothly between the same measured points would match
+         * every third value and be wrong everywhere else. The property is what matters -
+         * whole steps, never going backwards, and stopping at 5.4/2.
+         */
+        int backwards = 0, shared = 0;
+        double last = -1.0;
+
+        for (int v = 0; v <= 99; ++v)
+        {
+            const double t = s950::cal::vcaAttackSeconds (v);
+            const double n = s950::cal::VcaAttackSpan / t;
+
+            if (t < last - 1e-9)                          ++backwards;
+            else if (std::abs (t - last) < 1e-9)          ++shared;
+            if (std::abs (n - std::round (n)) > 1e-9)
+                same ("a whole number of steps", n, std::round (n), 1e-9);
+
+            last = t;
+        }
+
+        same ("the attack never shortens as the byte rises", backwards, 0);
+        check (shared > 40, "and it steps rather than sliding", shared, 40);
+        same ("the slowest attack is the span over two",
+              s950::cal::vcaAttackSeconds (99), s950::cal::VcaAttackSpan / 2.0, 1e-9);
     }
 
     void checkLfo()

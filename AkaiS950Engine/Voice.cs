@@ -120,7 +120,7 @@ namespace AkaiS950Engine
             double zoneDb = kg.ZoneLoudness * Cal.LoudnessDbPerUnit;
             double sustainDb = -(1.0 - Clamp01(kg.VcaSustain / 99.0)) * Cal.SustainDb;
 
-            _attack = Cal.EnvSeconds(kg.VcaAttack) * Cal.AttackScale;
+            _attack = Cal.VcaAttackSeconds(kg.VcaAttack);
             _decay = Cal.EnvSeconds(kg.VcaDecay);
             _release = Cal.EnvSeconds(kg.VcaRelease);
             _peak = Math.Min(Cal.DbToGain(velDb + zoneDb), 4.0);
@@ -205,7 +205,7 @@ namespace AkaiS950Engine
             double zoneDb = kg.ZoneLoudness * Cal.LoudnessDbPerUnit;
             double sustainDb = -(1.0 - Clamp01(kg.VcaSustain / 99.0)) * Cal.SustainDb;
 
-            _attack = Cal.EnvSeconds(kg.VcaAttack) * Cal.AttackScale;
+            _attack = Cal.VcaAttackSeconds(kg.VcaAttack);
             _decay = Cal.EnvSeconds(kg.VcaDecay);
             _release = Cal.EnvSeconds(kg.VcaRelease);
             _peak = Math.Min(Cal.DbToGain(velDb + zoneDb), 4.0);
@@ -375,9 +375,12 @@ namespace AkaiS950Engine
         {
             double env;
 
+            // A fixed RATE, not a fixed time - see the note on Cal.VcfTimeScale. A release
+            // from half depth takes half as long, because the envelope falls at the speed the
+            // release byte sets rather than always arriving after it.
             if (_vcfReleasing)
                 env = _vcfRelease > 0.0005
-                    ? _vcfReleaseFrom * Math.Max(0, 1 - _vcfReleaseT / _vcfRelease)
+                    ? Math.Max(0, _vcfReleaseFrom - _vcfReleaseT / _vcfRelease)
                     : 0;
             else
                 env = VcfEnvelopeHeld(_vcfT);

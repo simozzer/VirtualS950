@@ -132,7 +132,7 @@ namespace s950
      */
     void Voice::applyTrims()
     {
-        attack      = cal::envSeconds (trimmed (kg->vcaAttack,  trims.vcaAttack)) * cal::AttackScale;
+        attack      = cal::vcaAttackSeconds (trimmed (kg->vcaAttack, trims.vcaAttack));
         decay       = cal::envSeconds (trimmed (kg->vcaDecay,   trims.vcaDecay));
         releaseTime = cal::envSeconds (trimmed (kg->vcaRelease, trims.vcaRelease));
 
@@ -307,8 +307,11 @@ namespace s950
          * the key came up.
          */
         const double env = vcfReleasing
+            // A fixed RATE, not a fixed time - see cal::ReleaseIsARate. A release from half
+            // depth takes half as long, because the release byte sets the speed the envelope
+            // falls at rather than when it arrives.
             ? (vcfRelease > 0.0005
-                   ? vcfReleaseFrom * std::max (0.0, 1.0 - vcfReleaseT / vcfRelease)
+                   ? std::max (0.0, vcfReleaseFrom - vcfReleaseT / vcfRelease)
                    : 0.0)
             : vcfEnvelopeHeld (vcfT);
 
