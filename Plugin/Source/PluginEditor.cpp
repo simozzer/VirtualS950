@@ -1,5 +1,7 @@
 #include "PluginEditor.h"
 
+#include <algorithm>
+
 /*
  * Where the file browser was last pointed, kept between one disk and the next.
  *
@@ -481,8 +483,16 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
      */
     const struct { const char* id; const char* name; const char* group; int cc; } wanted[] =
     {
-        { "vcfCutoff",  "Cutoff",  "VCF", 74 },
-        { "vcfAmount",  "Amount",  "VCF", 70 },
+        /*
+         * Filter belongs to the SAMPLES, not to the envelope, so it gets its own row.
+         *
+         * It sets where each sample's filter sits - byte 44 for the soft one, 66 for the
+         * hard - and the envelope then moves the cutoff away from there by Amnt. Standing
+         * the two side by side under one heading made it look like a second envelope
+         * control, which it is not.
+         */
+        { "vcfCutoff",  "Filter",  "SAMPLE", 74 },
+        { "vcfAmount",  "Amnt",    "VCF",    70 },
     };
 
     for (const auto& w : wanted)
@@ -515,7 +525,7 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
         knobs.push_back (std::move (k));
     }
 
-    for (auto* h : { &vcaHeading, &vcfHeading })
+    for (auto* h : { &vcaHeading, &vcfHeading, &sampleHeading })
     {
         h->setJustificationType (juce::Justification::centredLeft);
         h->setColour (juce::Label::textColourId, juce::Colours::grey);
@@ -526,6 +536,11 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
     // tooltip of the graph itself, which is where someone looking for them would point.
     vcaHeading.setText ("VCA envelope", juce::dontSendNotification);
     vcfHeading.setText ("VCF envelope", juce::dontSendNotification);
+    // No heading over this row: the knob is already labelled Filter, and a heading saying the
+    // same word above it is just the word twice. The label stays empty rather than being
+    // deleted so the row keeps its spacing, and so there is somewhere to put a heading if
+    // this row ever holds enough controls to need one.
+    sampleHeading.setText ("", juce::dontSendNotification);
 
     vcaEnvelope.setTooltip ("The amplitude envelope, across every keygroup in the programme. "
                             "Drag the corners; double-click one to put that stage back to what "
@@ -811,7 +826,9 @@ void VirtualS950Editor::resized()
             auto column = area.removeFromRight (78);
             area.removeFromRight (8);
 
-            const int cell = column.getHeight() / count;
+            // Capped, so a single knob sits at the top of the column at a sensible size
+            // rather than being stretched down the whole height of the graph beside it.
+            const int cell = std::min (100, column.getHeight() / count);
 
             for (auto& k : knobs)
             {
@@ -843,6 +860,29 @@ void VirtualS950Editor::resized()
 
     placeEnvelope (half,   vcaHeading, vcaEnvelope, "VCA");
     placeEnvelope (shapes, vcfHeading, vcfEnvelope, "VCF");
+
+    /*
+     * The sample controls get a row of their own above the envelopes, with room in it.
+     *
+     * Filter is not an envelope parameter - it is where each sample's filter sits, which the
+     * envelope then moves away from - and beside the graph it read as though it were. The
+     * space to its right is deliberate: this is where the rest of the per-sample controls go.
+     */
+    r.removeFromBottom (14);
+    auto samples = r.removeFromBottom (108);
+
+    sampleHeading.setBounds (samples.removeFromTop (16));
+    samples.removeFromTop (4);
+
+    for (auto& k : knobs)
+    {
+        if (juce::String (k.group) != "SAMPLE") continue;
+
+        auto cell = samples.removeFromLeft (78);
+        k.label->setBounds (cell.removeFromBottom (13));
+        k.slider->setBounds (cell.reduced (1));
+        samples.removeFromLeft (8);
+    }
 
     r.removeFromTop (10);
     patchLabel.setBounds (r.removeFromTop (24));

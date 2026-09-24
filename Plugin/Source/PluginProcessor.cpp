@@ -67,18 +67,41 @@ VirtualS950Processor::describeParameters()
             juce::AudioParameterFloatAttributes().withStringFromValueFunction (asOffset)));
     };
 
-    addTrim ("vcfCutoff", "VCF Cutoff", 99.0f);
+    /*
+     * "Filter", not "Cutoff" - the S950 has no control by that name.
+     *
+     * What this shifts is the per-SAMPLE filter value, byte 44 for the soft zone and 66 for
+     * the hard one, and a keygroup can hold two different ones: 54% of the library's 168
+     * two-zone keygroups set them apart, usually by a few units and sometimes by a lot.
+     * Shifting both by the same amount keeps whatever relationship the programmer chose,
+     * which is why this is one control rather than two.
+     *
+     * The parameter ID stays vcfCutoff. Changing it would silently drop the setting out of
+     * every session already saved with this plugin in it.
+     */
+    addTrim ("vcfCutoff", "VCF Filter", 99.0f);
 
     /*
-     * The amount reaches twice its own range, for the same reason the envelope stages reach
-     * the whole of theirs: it is an OFFSET, and an offset of 50 cannot take a keygroup that
-     * already sits at +50 anywhere below zero. Thirty-four keygroups in the library are at
-     * +50, and inverting one of them is exactly the sort of thing this control is for.
+     * The amount reads -50..+50, which is the range printed on the machine.
      *
-     * The sum is clamped to the panel's own -50..+50 afterwards, so the extra travel buys
-     * reach rather than range.
+     * It briefly reached +-100, on the reasoning that an offset has to cover twice a range
+     * to reach either end of it from anywhere - which is true, and is why the envelope
+     * stages do. It is the wrong trade here. Across the library's 250 multi-keygroup
+     * programmes the VCF amount is the SAME in every keygroup of every one of them bar a
+     * single drum kit, so there is no spread for an offset to preserve: shifting them all
+     * by n and setting them all to n differ only in where the knob starts.
+     *
+     * Which leaves the range free to match the panel, and it should - a control that reads
+     * +70 when the machine only goes to 50 is a control that has to be explained.
+     *
+     *     VCF amount   100% of programmes use one value      cutoff  74%
+     *     VCF sustain  100%                                  VCA decay  62%
+     *     VCF decay     99%                                  VCA release 56%
+     *
+     * The one thing given up is inverting a keygroup that already sits at +50, which needs
+     * an offset of -100. Thirty-four keygroups in the library are there.
      */
-    addTrim ("vcfAmount", "VCF Amount", 100.0f);
+    addTrim ("vcfAmount", "VCF Amnt", 50.0f);
 
     /*
      * The two envelopes, as offsets on the panel's 0..99 for each stage.

@@ -501,13 +501,92 @@ namespace
         check (inverted < upright * 0.9, "a negative amount inverts the envelope",
                inverted, upright);
 
-        // And the trim can reach the inversion from a keygroup already at full positive
-        // amount, which an offset of only 50 could not.
-        const auto deep = patchWith (80, 50, true);
-        const double asWas   = levelAt (deep, 0.0,    0.0);
-        const double flipped = levelAt (deep, 0.0, -100.0);
-        check (flipped < asWas * 0.9, "and can reach it from a keygroup at +50",
-               flipped, asWas);
+        /*
+         * The control's range is the panel's, -50..+50, so the engine has to hold the sum
+         * inside it rather than trusting the caller. A keygroup at +50 taken down by a
+         * further 50 lands at 0 - no envelope - and not at some depth off the bottom of what
+         * the machine can express.
+         */
+        /*
+         * The control reads -50..+50, the panel's own range, so it has to be able to cancel
+         * whatever the keygroup brought - a programme at +15 taken down by 15 is a programme
+         * with no filter envelope.
+         *
+         * From stored 20, because that is where the difference is worth measuring: with the
+         * base at the floor the envelope has the whole range above it, and the saw's energy
+         * moves properly. From the middle of the range the same change moves a few per cent,
+         * because a sawtooth keeps most of its power in the first few harmonics.
+         *
+         * There is deliberately no check that the sum is clamped at +-50. It is clamped, but
+         * the clamp cannot be heard: at 8.3 octaves a full amount runs the cutoff into a stop
+         * from any base, so clamped and unclamped land in the same place and a check would
+         * pass whether the code did it or not.
+         */
+        const auto deep = patchWith (20, 15, true);
+        const double asWas  = levelAt (deep, 0.0,   0.0);
+        const double zeroed = levelAt (deep, 0.0, -15.0);
+
+        check (zeroed < asWas * 0.9, "the trim can cancel a keygroup's own amount",
+               zeroed, asWas);
+
+        /*
+         * One Filter knob, reaching BOTH samples of a velocity-switched keygroup.
+         *
+         * A keygroup holds up to two zones - a soft sample and a hard one - each with its own
+         * filter value, and 54% of the library's two-zone keygroups set them apart. They are
+         * separate voice entries by the time the engine sees them, so the question is whether
+         * one control reaches both, and whether it leaves the gap between them alone.
+         *
+         * It must also change nothing at rest. A control that has not been touched has no
+         * business altering a programme.
+         */
+        {
+            auto split = std::make_shared<s950::Patch>();
+
+            s950::KeygroupPatch soft;
+            soft.lowKey = 0; soft.highKey = 127; soft.keygroupIndex = 0;
+            soft.sound = makeSaw (48000, 48000);
+            soft.vcaSustain = 99;
+            soft.velocityFrom = 0; soft.velocityTo = 63;
+            soft.zoneFilter = 30;
+
+            auto hard = soft;
+            hard.velocityFrom = 64; hard.velocityTo = 127;
+            hard.zoneFilter = 45;              // the hard sample is brighter, as they often are
+
+            split->keygroups.push_back (soft);
+            split->keygroups.push_back (hard);
+
+            auto atVelocity = [&] (int velocity, double filterTrim)
+            {
+                s950::Engine engine (48000.0);
+                engine.setPatch (split);
+                engine.trims.cutoff.store (static_cast<float> (filterTrim));
+
+                std::vector<float> buffer (2400);
+                engine.noteOn (60, velocity);
+                engine.render (buffer.data(), static_cast<int> (buffer.size()));
+                return rms (buffer);
+            };
+
+            const double softFlat = atVelocity (40, 0.0);
+            const double hardFlat = atVelocity (100, 0.0);
+
+            check (hardFlat > softFlat * 1.05,
+                   "the hard sample keeps its own brighter filter", hardFlat, softFlat);
+
+            const double softOpen = atVelocity (40, 25.0);
+            const double hardOpen = atVelocity (100, 25.0);
+
+            check (softOpen > softFlat * 1.05, "one Filter knob opens the soft sample",
+                   softOpen, softFlat);
+            check (hardOpen > hardFlat * 1.05, "and the hard one too", hardOpen, hardFlat);
+
+            // untouched, it has to leave both exactly as the disk describes them
+            same ("at rest it changes the soft sample not at all",
+                  atVelocity (40, 0.0), softFlat, 1e-12);
+            same ("nor the hard one", atVelocity (100, 0.0), hardFlat, 1e-12);
+        }
 
         // The stops still hold: a trim cannot open the filter past the reconstruction limit.
         const double wideOpen = levelAt (patchWith (99, 0, true), 0.0, 0.0);
