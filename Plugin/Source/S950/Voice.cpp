@@ -47,7 +47,7 @@ namespace s950
         floorHz    = std::min (cal::FloorHz, ceiling);
 
         const double track    = cal::clamp (group.keyToFilter, 0, 99) / cal::KeyFull;
-        const double keyShift = (note - 60) / 12.0 * track;
+        const double keyShift = (note - cal::KeyPivot) / 12.0 * track;
         const double velShift = ((velocity - cal::VelPivot) / 127.0)
                                 * (cal::clamp (group.velToFilter, 0, 99) / 99.0)
                                 * cal::VelOctaves;
@@ -102,7 +102,7 @@ namespace s950
         floorHz    = std::min (cal::FloorHz, ceiling);
 
         const double track    = cal::clamp (group.keyToFilter, 0, 99) / cal::KeyFull;
-        const double keyShift = (note - 60) / 12.0 * track;
+        const double keyShift = (note - cal::KeyPivot) / 12.0 * track;
         const double velShift = ((velocity - cal::VelPivot) / 127.0)
                                 * (cal::clamp (group.velToFilter, 0, 99) / 99.0)
                                 * cal::VelOctaves;

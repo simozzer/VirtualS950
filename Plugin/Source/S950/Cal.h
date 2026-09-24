@@ -29,14 +29,44 @@ namespace s950::cal
     /// Measured: keyToFilter 50 is 1:1 tracking.
     inline constexpr double KeyFull = 50.0;
 
+    /*
+     * Measured: the note at which key tracking adds nothing.
+     *
+     * NOT 60, which is what this assumed for as long as it had a tracking term at all. The
+     * same keygroup played at five keys four octaves apart tracked 0.980 octaves per octave
+     * and crossed its own untracked value at note 62.0, with the five untracked controls
+     * flat to 0.000 octaves so there was nothing else it could have been.
+     *
+     * It matters beyond the tracking: a pivot in the wrong place quietly offsets every
+     * cutoff ever read from a keygroup with tracking on, which is where the 1878 Hz that
+     * used to sit at Curve's stored-50 point came from.
+     */
+    inline constexpr double KeyPivot = 62.0;
+
     /// Measured: octaves across the full velocity range.
     inline constexpr double VelOctaves = 8.34;
 
     /// Measured: the velocity that leaves the filter where it is.
     inline constexpr double VelPivot = 65.0;
 
-    /// Measured: from the slope, both amounts agreeing.
-    inline constexpr double EnvOctaves = 7.6;
+    /*
+     * Measured: how far the filter envelope moves the cutoff at full amount.
+     *
+     * Five amounts each way, from bases chosen to leave room in the direction under test,
+     * with the envelope held open so the corner stands still and can be read properly
+     * rather than traced through a moving sweep:
+     *
+     *     opening   0.167  0.171  0.168  0.162  octaves per unit  ->  8.37
+     *     closing   0.170  0.163  0.164                           ->  8.28
+     *
+     * Straight to within 0.013 octaves both ways, and the two agree to 1.1% - so a negative
+     * amount really does invert the envelope and go exactly as far, which the model had
+     * assumed without any evidence for it.
+     *
+     * It also starts a unit or two off zero rather than at it. That dead zone is real and
+     * measured but not modelled here; it is worth less than the 9% this corrects.
+     */
+    inline constexpr double EnvOctaves = 8.3;
 
     // --------------------------------------------------------------------- envelopes
 
@@ -98,12 +128,18 @@ namespace s950::cal
     }
 
     /*
-     * Measured points, not a formula.
+     * Measured points, not a formula. The curve steepens as it climbs, so a straight line in
+     * log space is the wrong shape and a table of what was measured is right.
      *
-     * Fitting one exponential through the ladder's two unsaturated points put a stored 50 at
-     * 2355 Hz; the key-tracking clip, which uses exactly that setting, measured 1878. The
-     * curve steepens as it climbs, so a straight line in log space is the wrong shape and a
-     * table of what was actually measured is right.
+     * Nine points now rather than the original ladder's six. The five in between came from a
+     * run built for the purpose, with key tracking, velocity and the envelope all off, so
+     * nothing but the stored byte could reach the cutoff.
+     *
+     * The 50 point is the one that moved, from 1878 to 2210 - a quarter of an octave, in the
+     * middle of the range where most of the library sits. The old figure came from a clip
+     * with keyToFilter at 50, and tracking turns out not to pivot where the model assumed;
+     * see KeyPivot. Two later takes, on two disks, measured 2211 and 2210 with tracking off,
+     * the second at five different keys with a spread of 0.000 octaves.
      *
      * A negative frequency means "as far open as it goes" - the reconstruction limit, which
      * moves with the sample rate, so writing a number would wrongly cap a 48 kHz sample
@@ -113,8 +149,8 @@ namespace s950::cal
 
     inline constexpr CurvePoint Curve[] =
     {
-        {  0,  311 }, { 20,  311 }, { 40, 1139 }, { 50, 1878 },
-        { 60, 4808 }, { 80,   -1 }, { 99,   -1 }
+        {  0,  311 }, { 20,  311 }, { 30,  544 }, { 40, 1138 }, { 50, 2210 },
+        { 60, 4779 }, { 70, 8783 }, { 80,   -1 }, { 99,   -1 }
     };
 
     inline constexpr int CurveCount = static_cast<int> (std::size (Curve));

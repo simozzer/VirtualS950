@@ -138,7 +138,7 @@ namespace AkaiS950Engine
             _baseCutoff = Cal.CutoffHz(kg.ZoneFilter, _leaveRate);
 
             double track = Clamp(kg.KeyToFilter, 0, 99) / Cal.KeyFull;
-            double keyShift = (note - 60) / 12.0 * track;
+            double keyShift = (note - Cal.KeyPivot) / 12.0 * track;
             double velShift = ((vel - Cal.VelPivot) / 127.0) *
                               (Clamp(kg.VelToFilter, 0, 99) / 99.0) * Cal.VelOctaves;
             _cutoffShift = keyShift + velShift;
@@ -217,7 +217,7 @@ namespace AkaiS950Engine
             _baseCutoff = Cal.CutoffHz(kg.ZoneFilter, _leaveRate);
 
             double track = Clamp(kg.KeyToFilter, 0, 99) / Cal.KeyFull;
-            double keyShift = (_note - 60) / 12.0 * track;
+            double keyShift = (_note - Cal.KeyPivot) / 12.0 * track;
             double velShift = ((_velocity - Cal.VelPivot) / 127.0) *
                               (Clamp(kg.VelToFilter, 0, 99) / 99.0) * Cal.VelOctaves;
             _cutoffShift = keyShift + velShift;

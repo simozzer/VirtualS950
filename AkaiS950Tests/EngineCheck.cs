@@ -44,12 +44,12 @@ static class EngineCheck
         // cutoffHz(stored, rate) - the measured curve, interpolated in log frequency
         CheckCutoff(0, 44100, 311.000);
         CheckCutoff(20, 44100, 311.000);
-        CheckCutoff(40, 44100, 1139.000);
-        CheckCutoff(50, 44100, 1878.000);
-        CheckCutoff(60, 44100, 4808.000);
+        CheckCutoff(40, 44100, 1138.000);
+        CheckCutoff(50, 44100, 2210.000);
+        CheckCutoff(60, 44100, 4779.000);
         CheckCutoff(99, 44100, 16317.000);
         // the ceiling moves with the rate, because the filter is also the reconstruction one
-        CheckCutoff(50, 20000, 1878.000);
+        CheckCutoff(50, 20000, 2210.000);
         CheckCutoff(99, 20000, 7400.000);
 
         CheckEnv(0, 0.001680);
@@ -175,16 +175,30 @@ static class EngineCheck
     }
 
     /// <summary>Power at one frequency, by Goertzel.</summary>
+    /// <summary>
+    /// The power at one frequency, through a Hann window.
+    ///
+    /// The window is not a nicety. Without one this is a rectangular-windowed DFT bin, whose
+    /// sidelobes fall off as 1/df - so a bin down in the passband collects leakage from every
+    /// frequency in the signal, and collects MORE of it from the unfiltered reference than
+    /// from the filtered take simply because the reference has more up there. The passband
+    /// then reads several dB down when it is actually flat, and how far down depends on where
+    /// the corner happens to be. Moving the measured cutoff from 1878 Hz to 2210 was enough
+    /// to turn that from a pass into a failure, which is a test reporting on its own window
+    /// rather than on the filter.
+    /// </summary>
     static double Power(float[] x, int from, int len, double hz)
     {
-        double re = 0, im = 0, w = 2 * Math.PI * hz / Rate;
+        double re = 0, im = 0, w = 2 * Math.PI * hz / Rate, sum = 0;
         for (int i = 0; i < len; i++)
         {
+            double win = 0.5 - 0.5 * Math.Cos(2 * Math.PI * i / (len - 1.0));
             double a = w * i;
-            re += x[from + i] * Math.Cos(a);
-            im -= x[from + i] * Math.Sin(a);
+            re += x[from + i] * win * Math.Cos(a);
+            im -= x[from + i] * win * Math.Sin(a);
+            sum += win;
         }
-        return (re * re + im * im) / (len * (double)len);
+        return (re * re + im * im) / (sum * sum);
     }
 
     static double Rms(float[] x, int from, int len)
@@ -203,7 +217,7 @@ static class EngineCheck
     static void FilterCheck()
     {
         var kg = Flat(Noise(3));
-        kg.ZoneFilter = 50;                      // 1878 Hz, measured
+        kg.ZoneFilter = 50;                      // 2210 Hz, measured
         float[] y = Render(kg, 60, 100, 2.0, 0);
 
         var flat = Flat(Noise(3));
