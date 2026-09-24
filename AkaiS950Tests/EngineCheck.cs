@@ -52,12 +52,17 @@ static class EngineCheck
         CheckCutoff(50, 20000, 2210.000);
         CheckCutoff(99, 20000, 7400.000);
 
-        CheckEnv(0, 0.001680);
-        CheckEnv(20, 0.010799);
-        CheckEnv(50, 0.175999);
-        CheckEnv(70, 1.131337);
-        CheckEnv(80, 2.868352);
-        CheckEnv(99, 16.800000);
+        // The measured points of Cal.EnvTime, and the interpolation between them. 70, 80, 90
+        // and 95 are measurements; 0 and 99 are the fitted slope carried past the last of
+        // them, and 20 and 50 are interpolation across the long unmeasured gap at the bottom.
+        CheckEnv(0, 0.010400);
+        CheckEnv(20, 0.042761);
+        CheckEnv(50, 0.356500);
+        CheckEnv(70, 1.403700);
+        CheckEnv(80, 2.813600);
+        CheckEnv(90, 4.117200);
+        CheckEnv(95, 8.094700);
+        CheckEnv(99, 10.740100);
 
         Check("sustain 50 is 19.8 dB down, not half",
               Near(Cal.DbToGain(-(1 - 50 / 99.0) * Cal.SustainDb), 0.104713, 0.00002),

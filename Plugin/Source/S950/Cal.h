@@ -66,48 +66,117 @@ namespace s950::cal
      * It also starts a unit or two off zero rather than at it. That dead zone is real and
      * measured but not modelled here; it is worth less than the 9% this corrects.
      */
-    inline constexpr double EnvOctaves = 8.3;
+    inline constexpr double EnvOctaves = 8.5;
 
     // --------------------------------------------------------------------- envelopes
 
-    /// Measured: VCA decay 80 at 2.86 s.
-    inline constexpr double EnvMinMs = 1.68;
+    /*
+     * Measured points, not a formula - see envSeconds below.
+     *
+     * This replaces a pair of constants, one measured and one assumed: a shortest time of
+     * 1.68 ms taken from a single VCA decay at stored 80, and a 10000:1 span across the range
+     * that nothing had ever checked. The span is the part that was wrong. The real one is
+     * nearer 1400:1, so the old curve ran half as fast as the machine below stored 70 and
+     * nearly twice as fast above stored 85.
+     *
+     * Nine settings, measured on the filter envelope where a moving cutoff can be watched all
+     * the way down a fourteen-second note. Attack, decay and release are three separate
+     * readings of this one curve, and where they overlap they agree to 1.07x - so it really
+     * is one curve, and it is this one.
+     *
+     *     stored      50     55     60     65     70     80     85     90     95
+     *     measured  0.357  0.418  0.722  0.881  1.404  2.814  4.037  4.117  8.095
+     *     old model 0.176  0.280  0.446  0.711  1.131  2.868  4.567  7.272 11.580
+     *
+     * Measured twice over, because the analysis has a bias of its own - a window averages the
+     * sweep passing through it - and that bias is found by putting a RENDER of the model
+     * through the same analysis, where the answer is known. The first pass used a model that
+     * was out by up to 2x, so its biases were taken at the wrong sweep rates; adopting its
+     * table and measuring again moved every point by less than 8%. A third pass against THIS
+     * table reads every setting back at 0.95 to 1.04 of it, and the points oscillate rather
+     * than drift - so what is left is the measurement's own repeatability and not an error
+     * still to be chased.
+     *
+     * Stored 50 only appears at all on the second pass: under the old curve the render was
+     * over inside one analysis window, so there was nothing to take a bias from.
+     *
+     * The VCA decay confirms it independently, from the same take and a different envelope:
+     * measured against a fixed depth it gives 3.96 s at stored 85 against this table's 4.04,
+     * and 8.49 s at stored 95 against 8.09.
+     *
+     * STORED 90 IS THE ODD ONE
+     *
+     * Everything else sits within a few per cent of a plain exponential through these points.
+     * Stored 90 sits 41% off it, and all three of attack, decay and release put it there,
+     * agreeing with each other to 1.03x. So it is kept as measured rather than smoothed away
+     * - but it is the one point a second take should be asked about first.
+     *
+     * THE ENDS ARE EXTRAPOLATED, NOT MEASURED
+     *
+     * Nothing reaches below 50 or above 95: the fast end is over inside one analysis window
+     * and the slow end outlasts a note. Both ends continue at the slope fitted across every
+     * measured point, which is the best that can honestly be said of them. Extrapolating from
+     * the two nearest points instead put stored 0 at 320 ms, which every percussive sample in
+     * the library refutes.
+     */
+    struct EnvPoint { double stored, seconds; };
 
-    /// Assumed: the same 10000:1 span, moved with the bottom.
-    inline constexpr double EnvMaxMs = 16800.0;
+    inline constexpr EnvPoint EnvTime[] =
+    {
+        {  0, 0.01040 }, { 50, 0.3565 }, { 55, 0.4184 }, { 60, 0.7224 }, { 65, 0.8806 },
+        { 70, 1.4037 }, { 80, 2.8136 }, { 85, 4.0370 }, { 90, 4.1172 }, { 95, 8.0947 },
+        { 99, 10.7401 }
+    };
 
-    /// Measured: attack 70 between 1.39 s and 1.66 s.
-    inline constexpr double AttackScale = 1.33;
+    inline constexpr int EnvTimeCount = static_cast<int> (std::size (EnvTime));
+
+    /*
+     * The VCA attack against the shared curve. One, within the measurement.
+     *
+     * It was 1.33, which is what it took to reach the measured attack at stored 70 when the
+     * curve underneath was the old one. The curve has moved, and at stored 70 the new curve
+     * alone now lands on that same measurement: 1.406 s here against a real machine that
+     * reaches full at about 1.5, and a rendered model of the old constants that is
+     * indistinguishable from it in the take.
+     *
+     * It is the weakest number on this page. Stored 85 says the VCA attack reaches full in
+     * 2.1 s where this gives 4.04, so the attack's curve is flatter than the shared one and
+     * no single multiplier can express that. Two points cannot fix it - fitted as an
+     * exponential they put the shortest attack at 312 ms, which is the same absurd answer
+     * that two-point extrapolation gives everywhere. It wants a run of its own, with the
+     * level driven well clear of the noise so the whole ramp is visible.
+     *
+     * Until then: 1.0 is right at the one setting two runs agree on, and closer than 1.33 at
+     * the other.
+     */
+    inline constexpr double AttackScale = 1.0;
 
     /// Measured: 2.25 s against the VCA's 2.86.
     inline constexpr double VcfTimeScale = 0.78;
 
     /*
-     * APPROXIMATE: the filter's release stops growing, at somewhere around a second.
+     * The filter's release follows this same scale, and there is no cap on it.
      *
-     * The envelope time curve is badly wrong for this one stage. Two takes, converting when
-     * the sweep passed a fixed probe into a release:
+     * There was one, briefly, at a second. It came from two takes whose probe measurements
+     * had three faults in them - a spectrum routine that averaged each probe with its
+     * neighbours, a threshold crossing found by scanning from the noisy end, and probes
+     * placed within a twentieth of an octave of where the sweep began. Fixed, and read as a
+     * rate across the whole sweep rather than one crossing, the third take says the release
+     * keeps growing and the original scale was close all along:
      *
-     *     stored        50    60    70    80    90    99
-     *     run 1       0.35  0.38  0.42     -     -     -
-     *     run 2          -     -  1.04  1.09  1.05  1.09
-     *     the curve   0.14  0.35  0.88  2.24  5.67  13.1
+     *     stored        50     60     70     80
+     *     measured    0.250  0.526  1.159  2.061
+     *     this scale  0.137  0.348  0.882  2.237
      *
-     * Run 2 covers stored 70 to 99, over which the curve climbs fifteenfold, and measures
-     * the same second throughout. Whatever the release does, it does not follow the curve,
-     * and 13 seconds is not a thing this machine does.
+     * Within a factor of 1.8 at the fast end and 1.08 at the slow one - and the slow end is
+     * where the measurement is most trustworthy, because a slow sweep gives the probes time
+     * to be crossed properly. Rendering a known release through the same analysis confirms
+     * that: stored 70 came back at 2.27 octaves per second against 2.26 true, while the
+     * fastest was out by a quarter.
      *
-     * A cap is as much as the data carries. The two takes differ by 2.5x at stored 70, and
-     * that gap is itself a warning: turning a probe crossing into a release assumes the fall
-     * is a straight line in octaves, so two sweeps of different depths disagreeing says the
-     * fall is not straight. Until something measures the SHAPE, a number fitted to these
-     * crossings would be precision that is not there.
-     *
-     * One second is taken from run 2, whose sweep sat entirely in the band short windows can
-     * actually resolve. Below the cap the curve is left alone: it gives 0.35 s at stored 60
-     * against 0.38 measured, which is as close as anything here gets.
+     * So: no cap, and no separate release curve either. A curve fitted to four points whose
+     * fast end is knowingly biased would be worse than the one already here.
      */
-    inline constexpr double VcfReleaseMax = 1.0;
 
     /// Measured: a stored 50 read 19.6 dB down, so it counts decibels.
     inline constexpr double SustainDb = 39.6;
@@ -225,17 +294,36 @@ namespace s950::cal
     }
 
     /*
-     * A stored 0..99 envelope time, in seconds.
+     * A stored 0..99 envelope time, in seconds, read off EnvTime.
+     *
+     * Straight in log time between the measured points, the same way cutoffHz is straight in
+     * log frequency between its own: the quantity is exponential in the stored byte, so a
+     * straight line in the log is what "between two measurements" means here.
      *
      * A double for the same reason cutoffHz takes one: the plugin's envelope trims land
-     * between the panel's steps, and this curve is exponential - a whole unit is about a
-     * tenth of the time either way, which steps audibly. Truncating to int was also a silent
-     * narrowing that the compiler was right to complain about. Whole numbers are unchanged.
+     * between the panel's steps, and a whole unit is a fifth of the time or more, which steps
+     * audibly. Whole numbers land exactly on the C# engine's answers.
      */
     inline double envSeconds (double stored)
     {
-        const double v = clamp (stored, 0.0, 99.0) / 99.0;
-        return (EnvMinMs * std::pow (EnvMaxMs / EnvMinMs, v)) / 1000.0;
+        const double v = clamp (stored, 0.0, 99.0);
+        double seconds = EnvTime[EnvTimeCount - 1].seconds;
+
+        for (int i = 1; i < EnvTimeCount; ++i)
+        {
+            if (v > EnvTime[i].stored)
+                continue;
+
+            const double lo   = EnvTime[i - 1].seconds;
+            const double hi   = EnvTime[i].seconds;
+            const double span = EnvTime[i].stored - EnvTime[i - 1].stored;
+            const double t    = span == 0 ? 0 : (v - EnvTime[i - 1].stored) / span;
+
+            seconds = lo * std::pow (hi / lo, t);        // straight in log time
+            break;
+        }
+
+        return seconds;
     }
 
     inline double dbToGain (double db) { return std::pow (10.0, db / 20.0); }
