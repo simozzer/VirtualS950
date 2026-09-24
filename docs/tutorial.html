@@ -93,6 +93,11 @@ containers are read: the <code>.hfe</code> that archived floppies come in, and t
 fill — it is marked unsaved from the moment it appears, because it exists only in this
 program until you write it.</p>
 
+<p>The first time you ever run it, it opens the bundled <code>BASS.hfe</code> by itself, so
+there is something to play with before you have found a disk of your own. After that it
+reopens whatever you had open when you last closed it. Close everything before you quit and
+it will start empty — that was a decision, so it is respected.</p>
+
 <h2>2. What you are looking at</h2>
 
 <p>The tree on the left lists what is on each disk, grouped into <strong>programs</strong>
@@ -220,6 +225,19 @@ nominal pitch, the loop mode, whether to normalise, and how much of the file to 
 <strong>Preview</strong> plays the converted audio before anything is written. It refuses
 outright if the result will not fit in the free blocks, and says by how much —
 <strong>Trim to Fit</strong> takes as much as will go.</p>
+
+<h3>Taking one back out</h3>
+
+<p><strong>Export Sample as WAV</strong> (<kbd>Ctrl</kbd>+<kbd>W</kbd>, or right-click a
+sample) saves it as an ordinary 16-bit WAV at its own rate, for a DAW or another sampler.
+<strong>Export Selected File</strong> beside it writes the file exactly as the disk holds
+it, which is what you want for putting it back on another Akai disk and no use at all in a
+DAW.</p>
+
+<p>The whole sample comes out, untrimmed. The loop is not baked into the audio: it travels
+in the file's <code>smpl</code> chunk along with the root note, so a sampler that reads
+that chunk picks the loop up by itself, and one that does not still gets the whole sound.
+Nothing is thrown away, so you can still move the markers afterwards.</p>
 
 <h2>8. Write the disk back</h2>
 

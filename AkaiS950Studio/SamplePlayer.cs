@@ -129,33 +129,14 @@ namespace AkaiS950Studio
             catch (Exception) { /* nothing was playing */ }
         }
 
-        /// <summary>A minimal 16-bit mono RIFF/WAVE wrapper around the samples.</summary>
+        /// <summary>
+        /// A 16-bit mono RIFF/WAVE wrapper around the samples, from the same writer the
+        /// WAV export uses - no loop chunk here, because this buffer has already had its
+        /// loop unrolled into it by ApplyMarkers and SoundPlayer would ignore one anyway.
+        /// </summary>
         static MemoryStream BuildWav(short[] pcm, int rate)
         {
-            int dataBytes = pcm.Length * 2;
-            var ms = new MemoryStream(44 + dataBytes);
-            var w = new BinaryWriter(ms);
-
-            w.Write(Encoding.ASCII.GetBytes("RIFF"));
-            w.Write(36 + dataBytes);
-            w.Write(Encoding.ASCII.GetBytes("WAVE"));
-
-            w.Write(Encoding.ASCII.GetBytes("fmt "));
-            w.Write(16);                  // chunk size for PCM
-            w.Write((short)1);            // format: PCM
-            w.Write((short)1);            // mono
-            w.Write(rate);
-            w.Write(rate * 2);            // bytes per second
-            w.Write((short)2);            // block align
-            w.Write((short)16);           // bits per sample
-
-            w.Write(Encoding.ASCII.GetBytes("data"));
-            w.Write(dataBytes);
-            for (int i = 0; i < pcm.Length; i++) w.Write(pcm[i]);
-
-            w.Flush();
-            ms.Position = 0;
-            return ms;
+            return new MemoryStream(WavFile.Build(pcm, rate));
         }
 
         public void Dispose()

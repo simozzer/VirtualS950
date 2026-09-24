@@ -34,7 +34,15 @@ never modified.
 - Finds a loop in a sustained sample, and says how clean the join is
 - Edits several keygroups at once, and sets a key range by clicking the keyboard
 - Writes the result as either `.hfe` or a raw `.img`, whichever the disk came from
+- Copies a sample or a program onto another open disk. A program brings every sample its
+  zones name; a name already taken by something else is renamed rather than overwritten
+- Copies a single keygroup onto another program, on the same disk or another open one,
+  bringing the samples its zones name with it
 - Exports any file exactly as stored on the disk
+- Exports a sample as a 16-bit WAV at its own rate, with the loop and the root note
+  written into the file's `smpl` chunk rather than baked into the audio
+- Opens on the disks that were open last time; the very first run opens the bundled
+  sound library instead, so there is something to play with straight away
 - Reports read integrity — bad-CRC and unreadable sectors, per disk
 
 Decoding 101 images takes about 20 seconds; it runs on a background thread with a
@@ -43,16 +51,31 @@ progress bar, so the window stays responsive.
 ## Running it
 
 ```
-AkaiS950Studio.exe             open empty
+AkaiS950Studio.exe             reopen the last session
 AkaiS950Studio.exe E:\         load every image on the stick at startup
 AkaiS950Studio.exe disk.hfe    load one image
 ```
+
+### What it opens with
+
+A path on the command line is an instruction and beats anything remembered. With no path,
+it reopens whatever was loaded when it last closed.
+
+The very first run has no such history, so it opens `BASS.hfe` from the bundled library
+rather than meeting a newcomer with an empty window and a file dialog. Closing everything
+before quitting is remembered too: that was a decision, so the next launch opens empty
+rather than putting the library back.
+
+The list is one path per line in `%APPDATA%\AkaiS950Studio\session.txt`. Delete it to
+start as though for the first time. Its existence is also how the first run is recognised,
+which is what separates "never been here" from "was here and closed the disks on purpose".
 
 | Shortcut | Action |
 |---|---|
 | `Ctrl+O` | Open disk image |
 | `Ctrl+Shift+O` | Open folder |
 | `Ctrl+E` | Export selected file |
+| `Ctrl+W` | Export the selected sample as a WAV |
 | `Ctrl+I` | Add a sample to the selected disk |
 | `Ctrl+N` | New program on the selected disk |
 | `Ctrl+L` | Slice the selected sample into one-shots |
@@ -104,6 +127,8 @@ decoder benefits both.
 | `PianoKeyboard.cs` | the keyboard strip that maps keygroups onto the keys |
 | `WaveformView.cs` | waveform envelope, markers and time ruler |
 | `SamplePlayer.cs` | wraps decoded PCM in a WAV header and plays it |
+| `WavFile.cs` | the WAV writer, including the `smpl` loop chunk — used by the export and by the player |
+| `Session.cs` | what was open last time, and the disk a first-time user starts on |
 | `AudioImport.cs` | WAV/AIFF decoding, rate conversion, 12-bit quantising, onset detection |
 | `AudioFileDialog.cs` | the file browser that previews what you click |
 | `ImportDialog.cs` | the Add Sample dialog, including the capacity check |
@@ -113,6 +138,7 @@ decoder benefits both.
 | `..\AkaiS950List\HfeWrite.cs` | MFM re-encode, in-place sector patching, and building an HFE from nothing |
 | `..\AkaiS950List\AkaiDisk.cs` | directory, FAT, file reads, sample headers, keygroups |
 | `..\AkaiS950List\AkaiDiskEdit.cs` | the edits that resize or reorder files: delete, programs, slicing |
+| `..\AkaiS950List\AkaiDiskCopy.cs` | copying a sample, a program or a keygroup onto another disk, planned before it is written |
 
 Disk format notes are in `..\AkaiS950List\S950-Disk-Format.pdf`.
 
@@ -233,6 +259,137 @@ throws rather than corrupting an image.
 
 Nothing already on the disk is moved or rewritten. The new file takes free blocks and a
 directory slot after the last sample, which is what keeps the derived RAM fields correct.
+
+## Copying between disks
+
+Right-click a sample or a program and **Copy to** lists every other disk that is open.
+Nothing is written until the whole set fits, and a box first shows exactly what would
+land and what it costs.
+
+A program is never copied alone. Its zones name their samples by name, so every sample
+they name comes with it - otherwise it would arrive silent. That makes a copy quietly
+larger than it looks, which is why the confirmation itemises it.
+
+### Nothing on the target is replaced
+
+A name already taken by a *different* file is renamed: `BASSLOOP` arrives as `BASSLOOP2`,
+and the copied program's zones are repointed at the new name so it still plays what it
+came with. The file already on the target is left exactly as it was, because replacing it
+would silently change how that disk's other programs sound.
+
+A name taken by the *same* file - same bytes, ignoring the fields that belong to the disk
+rather than the file - is recognised and skipped. Copying a program twice therefore costs
+nothing the second time and writes no duplicate samples.
+
+### What a copy has to recompute
+
+Two numbers in a sample's header belong to the disk it was living on rather than to the
+sample: where it sits in the sampler's RAM (`0x36..0x38`) and where its loop descriptors
+sit (`0x28`). `RebuildPointers` does not touch either - it rebuilds the keygroup arena,
+not the sample table - so `AkaiDiskCopy` recomputes them from the last sample already on
+the target, exactly as `AddSample` derives them for a new one. A program also takes a free
+program number, since two programs sharing one is a conflict the sampler settles by
+playing whichever it reaches first.
+
+Everything else is carried over untouched, which is the point of copying the file rather
+than re-adding it from its audio: the rate, the tuning, the loop markers, the loop mode
+and direction and the loudness all survive.
+
+### One keygroup, onto another program
+
+Right-click a keygroup row and **Copy Keygroup N to...** lists every program that is open
+except the one it came from - copying a keygroup onto its own program is what **Add
+Keygroup** already does. Unlike a file copy this may end on the disk it started on:
+moving a keygroup between two programs of the same disk is an ordinary thing to want, and
+the samples it names are then already there, which the plan works out for itself.
+
+The keygroup lands at the end of the target program. Its place in the chain carries
+nothing the sampler reads - the key range decides what sounds - so there is nothing to be
+gained by inserting it anywhere else. Only the zones of that one keygroup are consulted,
+so it brings the one or two samples it actually names rather than the whole program's.
+
+It is confirmed only when something beyond the keygroup is written. A keygroup landing on
+a program whose disk already holds its samples costs one record and is undoable, and
+stopping to confirm that is friction rather than safety.
+
+### How it is checked
+
+`CopyCheck` copies every sample and every program across every pair of disks in the
+library - 183 copies - and asserts rather more about what must *not* change than about
+what does:
+
+```
+6 disks: 61 sample copies, 122 program copies, 16 already present
+8470 checks, ALL PASSED
+```
+
+Every file already on the target is compared byte for byte afterwards; the copied audio
+is compared against the source; and the rebuilt image is reloaded and `RebuildPointers`
+run on it, which must find **nothing left to fix**. A pointer this code failed to
+recompute shows up there as a non-zero count.
+
+The corpus never collides, so the rename and skip paths are set up by hand: a sample is
+planted on the target under a name the incoming program needs, holding different audio,
+and the copy must rename what it brings, repoint the program's zones, and leave the
+planted file alone.
+
+`KeygroupCopyCheck` does the same for keygroups, in both directions - across disks and
+between two programs of one disk:
+
+```
+122 keygroup copies across disks, 122 within one disk, 118 sample(s) brought along, 5 renamed
+10064 checks, ALL PASSED
+```
+
+A keygroup is not a file, so it writes differently: the target program grows by 70 bytes
+in place and the arena moves under every program on the disk. That makes the pointer check
+the point rather than a formality, and it checks something the file copy does not need to -
+that the keygroups already in the target program still say exactly what they said, since a
+record spliced onto the end must not disturb the ones in front of it.
+
+The web version does all of this too - `test\copytest.js` and `test\keygrouptest.js` there
+are the other halves. Both report the same counts from the same disks.
+
+## Taking a sample out
+
+**Export Sample as WAV...** (`Ctrl+W`, or right-click a sample) writes a 16-bit mono WAV
+at the sample's own rate. It is the other half of **Export Selected File**, which writes
+the file exactly as the disk holds it — the right thing for putting back on another disk,
+and no use at all in a DAW.
+
+Everything the sample stores comes out. The audio is not trimmed to the markers and the
+loop is not baked into it; both travel in the file's `smpl` chunk instead, together with
+the root note taken from the sample's tuning. A sampler or DAW that reads that chunk —
+most do — picks the loop up by itself, and one that does not still gets the whole sound
+and plays it through. Nothing is discarded either way, so the markers can still be moved
+afterwards: the audio outside them is still there.
+
+### Where the loop lands
+
+The loop is the tail running back from the **end** marker by the loop length, not the
+whole marked span — the same reading the waveform display and the player use. The
+clamping that goes with it matters more than it looks:
+
+```
+6 disks, 61 samples, 43 looping, 37 with a loop longer than the sample
+```
+
+Thirty-seven of the sixty-one declare a loop length longer than the sample it belongs to.
+`BASS.hfe`'s `SQUARE` is 1222 samples long and declares a loop length of 1223, so a loop
+start worked out by subtraction alone lands before the start of the sound. `WavFile.cs`
+clamps exactly the way `SamplePlayer.ApplyMarkers` does, and `WavCheck` works out where
+the loop should land independently rather than by calling the same code — two pieces of
+code agreeing because they are the same code proves nothing.
+
+`smpl` names the last frame *inside* the loop, where the Akai end marker is one past it,
+which is the other off-by-one the check pins down.
+
+### The same file from both programs
+
+The web version writes this file too, from the same disks, and the two are separate
+implementations. All 61 samples in the shipped library come out **byte for byte
+identical** from both — `test\wavtest.js` in the web repository is the other half of
+`WavCheck`.
 
 ## Adding and deleting keygroups
 

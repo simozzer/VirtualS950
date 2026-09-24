@@ -51,6 +51,7 @@ namespace AkaiS950Studio
         readonly ToolStripStatusLabel _statusText = new ToolStripStatusLabel();
         readonly ToolStripProgressBar _progress = new ToolStripProgressBar();
         readonly ToolStripMenuItem _exportItem = new ToolStripMenuItem("&Export Selected File...");
+        readonly ToolStripMenuItem _exportWavItem = new ToolStripMenuItem("Export Sample as &WAV...");
         readonly ToolStripMenuItem _saveItem = new ToolStripMenuItem("&Save Disk Image As...");
         readonly ToolStripMenuItem _importItem = new ToolStripMenuItem("Add &Sample to Disk...");
         readonly ToolStripMenuItem _saveAllItem = new ToolStripMenuItem("Save A&ll Modified...");
@@ -199,24 +200,95 @@ namespace AkaiS950Studio
             catch (InvalidOperationException) { /* leave the defaults in place */ }
         }
 
-        /// <summary>A path on the command line (a folder, drive or image) loads at startup.</summary>
+        /// <summary>
+        /// A path on the command line (a folder, drive or image) loads at startup. With
+        /// nothing named, the last session does - or, the first time, the sound library.
+        /// </summary>
         protected override async void OnShown(EventArgs e)
         {
             base.OnShown(e);
-            if (_startupPaths == null || _startupPaths.Length == 0) return;
 
             var files = new List<string>();
-            foreach (var p in _startupPaths)
+            if (_startupPaths != null)
             {
-                if (Directory.Exists(p))
-                    files.AddRange(Directory.GetFiles(p, "*.hfe").Concat(Directory.GetFiles(p, "*.img")));
-                else if (File.Exists(p))
-                    files.Add(p);
+                foreach (var p in _startupPaths)
+                {
+                    if (Directory.Exists(p))
+                        files.AddRange(Directory.GetFiles(p, "*.hfe").Concat(Directory.GetFiles(p, "*.img")));
+                    else if (File.Exists(p))
+                        files.Add(p);
+                }
             }
-            if (files.Count == 0) return;
+
+            // An explicit path is an instruction and beats anything remembered.
+            if (files.Count == 0)
+            {
+                await OpenRememberedOrStarter();
+                return;
+            }
 
             files.Sort(StringComparer.OrdinalIgnoreCase);
             await LoadFiles(files.ToArray());
+        }
+
+        /// <summary>
+        /// What to open when the command line named nothing.
+        ///
+        /// Two cases wearing the same shape. Someone coming back gets whatever they had
+        /// open, because quitting the program is not the same as deciding to close the
+        /// disks. Someone arriving for the first time has no such history and would
+        /// otherwise meet an empty window and a file dialog, so they get the bundled
+        /// library instead: an instrument that makes a noise the moment it opens teaches
+        /// more than a correct empty state does.
+        /// </summary>
+        async Task OpenRememberedOrStarter()
+        {
+            if (Session.HasRunBefore())
+            {
+                string[] remembered = Session.LastOpened();
+
+                // Nothing open at the last exit. That was a choice, so honour it.
+                if (remembered.Length == 0) return;
+
+                string[] there = remembered.Where(File.Exists).ToArray();
+
+                if (there.Length == 0)
+                {
+                    SetStatus("The disk image(s) open last time are no longer where they were."
+                              + "  -  File > Open Disk Image to choose another.");
+                    return;
+                }
+
+                await LoadFiles(there);
+
+                // Say so rather than quietly opening fewer disks than were there before.
+                if (there.Length < remembered.Length)
+                    SetStatus(_statusText.Text + "  -  "
+                              + (remembered.Length - there.Length) + " since moved or deleted");
+                return;
+            }
+
+            string starter = Session.StarterDisk();
+            if (starter == null) return;        // no library beside us; the empty state stands
+
+            await LoadFiles(new string[] { starter });
+
+            SetStatus(_statusText.Text + "  -  opened " + Path.GetFileName(starter)
+                      + " to start you off; File > Open Disk Image for your own");
+        }
+
+        /// <summary>
+        /// Write down what is open, so the next launch can pick it up.
+        ///
+        /// Called on every load and on the way out rather than only at exit, so that a
+        /// program that is killed rather than closed still remembers the last thing it
+        /// was asked to open.
+        /// </summary>
+        void RememberSession()
+        {
+            var paths = new List<string>();
+            foreach (var d in _disks) paths.Add(FullPath(d.Source));
+            Session.Remember(paths.ToArray());
         }
 
         // ---------------------------------------------------------------- menu
@@ -238,11 +310,13 @@ namespace AkaiS950Studio
             _saveItem.ShortcutKeys = Keys.Control | Keys.S;
             _exportItem.Click += OnExport;
             _exportItem.ShortcutKeys = Keys.Control | Keys.E;
+            _exportWavItem.Click += OnExportWav;
+            _exportWavItem.ShortcutKeys = Keys.Control | Keys.W;
 
             file.DropDownItems.AddRange(new ToolStripItem[]
             {
                 openImage, openFolder, addImage, closeAll,
-                new ToolStripSeparator(), _importItem, _exportItem,
+                new ToolStripSeparator(), _importItem, _exportItem, _exportWavItem,
                 new ToolStripSeparator(),
                 _saveItem, _saveAllItem,
                 new ToolStripSeparator(),
@@ -713,6 +787,8 @@ namespace AkaiS950Studio
             if (failures.Count > 0) msg += "  -  " + failures.Count + " image(s) failed";
             SetStatus(msg);
 
+            RememberSession();
+
             if (failures.Count > 0)
                 MessageBox.Show(this, string.Join(Environment.NewLine, failures.Take(20)),
                     "Some images could not be read", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -722,6 +798,7 @@ namespace AkaiS950Studio
         {
             if (!ConfirmDiscard()) return;
             ResetAll();
+            RememberSession();
             SetStatus("Open a disk image, or a folder of them, to begin.");
         }
 
@@ -764,46 +841,148 @@ namespace AkaiS950Studio
 
         // ---------------------------------------------------------------- tree
 
+        /// <summary>
+        /// The disks whose names alone would not tell them apart.
+        ///
+        /// Add Image can bring in DSKA0000 from two different folders, and a menu offering
+        /// two identical entries is no offer at all.
+        /// </summary>
+        HashSet<string> DiskNameClashes()
+        {
+            return new HashSet<string>(
+                _disks.GroupBy(x => Path.GetFileNameWithoutExtension(x.Source),
+                               StringComparer.OrdinalIgnoreCase)
+                      .Where(g => g.Count() > 1).Select(g => g.Key),
+                StringComparer.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// What a disk is called, in the tree and anywhere else that has to name one.
+        /// The menus name a disk the way the tree does, which only holds while there is
+        /// one rule rather than two.
+        /// </summary>
+        static string DiskLabel(AkaiDisk d, HashSet<string> clashes)
+        {
+            string label = Path.GetFileNameWithoutExtension(d.Source);
+            if (clashes != null && clashes.Contains(label))
+                label += "  [" + FolderLabel(d.Source) + "]";
+            return label;
+        }
+
+        string DiskLabel(AkaiDisk d) { return DiskLabel(d, DiskNameClashes()); }
+
+        /// <summary>
+        /// Which disks and groups are open, so a rebuild can put them back.
+        ///
+        /// Every structural edit rebuilds the whole tree, because that is the only way to
+        /// be certain the tree says what the disks say. But a tree that collapses itself
+        /// every time a keygroup is copied is its own kind of wrong, and with a stick of
+        /// disks open it throws away a good deal of work.
+        ///
+        /// Disks are matched by identity - they outlive the nodes that show them - and
+        /// their groups by the label held in Name, since Text carries a count that the
+        /// edit has usually just changed.
+        /// </summary>
+        internal sealed class TreeOpenState
+        {
+            public bool HadNodes;
+            public readonly HashSet<AkaiDisk> Disks = new HashSet<AkaiDisk>();
+            public readonly Dictionary<AkaiDisk, HashSet<string>> Groups =
+                new Dictionary<AkaiDisk, HashSet<string>>();
+        }
+
+        /// <summary>
+        /// One disk's node, with its two groups under it.
+        ///
+        /// Pulled out of RebuildTree so that the tree a check builds is the tree the
+        /// program builds, rather than a copy of it that can drift.
+        /// </summary>
+        internal static TreeNode BuildDiskNode(AkaiDisk d, string label)
+        {
+            // With a whole stick loaded, the title bar cannot say which disk is dirty,
+            // so the marker goes on the node. The unmarked text is kept in Name so it
+            // can be recomposed without rebuilding the tree.
+            var diskNode = new TreeNode { Tag = d, Name = label + "  (" + d.Entries.Count + ")" };
+            MarkDiskNode(diskNode, d);
+
+            // Programmes and samples only. A disk carries a drum set and an overall
+            // record too, but neither can be edited or played here, so listing them
+            // put two groups in the way of the two you actually work in. The summary
+            // still counts them, so a disk that has them does not look empty of them.
+            AddGroup(diskNode, d, "Programs", 'P');
+            AddGroup(diskNode, d, "Samples", 'S');
+
+            return diskNode;
+        }
+
+        internal static TreeOpenState CaptureTreeState(TreeView tree)
+        {
+            var state = new TreeOpenState();
+            state.HadNodes = tree.Nodes.Count > 0;
+
+            foreach (TreeNode diskNode in tree.Nodes)
+            {
+                var d = diskNode.Tag as AkaiDisk;
+                if (d == null) continue;
+
+                if (diskNode.IsExpanded) state.Disks.Add(d);
+
+                foreach (TreeNode group in diskNode.Nodes)
+                {
+                    if (!group.IsExpanded || string.IsNullOrEmpty(group.Name)) continue;
+
+                    if (!state.Groups.ContainsKey(d)) state.Groups[d] = new HashSet<string>();
+                    state.Groups[d].Add(group.Name);
+                }
+            }
+            return state;
+        }
+
+        internal static void RestoreTreeState(TreeView tree, TreeOpenState state)
+        {
+            foreach (TreeNode diskNode in tree.Nodes)
+            {
+                var d = diskNode.Tag as AkaiDisk;
+                if (d == null) continue;
+
+                if (state.Disks.Contains(d)) diskNode.Expand();
+
+                HashSet<string> groups;
+                if (!state.Groups.TryGetValue(d, out groups)) continue;
+
+                foreach (TreeNode group in diskNode.Nodes)
+                    if (group.Name != null && groups.Contains(group.Name)) group.Expand();
+            }
+        }
+
         void RebuildTree()
         {
+            var open = CaptureTreeState(_tree);
+
             _tree.BeginUpdate();
             _tree.Nodes.Clear();
 
             // Add Image can bring in DSKA0000 from two different folders; those need
             // telling apart, so a clashing name carries its folder.
-            var clashes = new HashSet<string>(
-                _disks.GroupBy(x => Path.GetFileNameWithoutExtension(x.Source),
-                               StringComparer.OrdinalIgnoreCase)
-                      .Where(g => g.Count() > 1).Select(g => g.Key),
-                StringComparer.OrdinalIgnoreCase);
+            var clashes = DiskNameClashes();
 
             foreach (var d in _disks.OrderBy(x => Path.GetFileNameWithoutExtension(x.Source),
                                              StringComparer.OrdinalIgnoreCase))
             {
-                string label = Path.GetFileNameWithoutExtension(d.Source);
-                if (clashes.Contains(label)) label += "  [" + FolderLabel(d.Source) + "]";
-
-                // With a whole stick loaded, the title bar cannot say which disk is dirty,
-                // so the marker goes on the node. The unmarked text is kept in Name so it
-                // can be recomposed without rebuilding the tree.
-                var diskNode = new TreeNode { Tag = d, Name = label + "  (" + d.Entries.Count + ")" };
-                MarkDiskNode(diskNode, d);
-
-                // Programmes and samples only. A disk carries a drum set and an overall
-                // record too, but neither can be edited or played here, so listing them
-                // put two groups in the way of the two you actually work in. The summary
-                // still counts them, so a disk that has them does not look empty of them.
-                AddGroup(diskNode, d, "Programs", 'P');
-                AddGroup(diskNode, d, "Samples", 'S');
-
-                _tree.Nodes.Add(diskNode);
+                _tree.Nodes.Add(BuildDiskNode(d, DiskLabel(d, clashes)));
             }
+
+            RestoreTreeState(_tree, open);
 
             _tree.EndUpdate();
             FitTreeWidth();
             if (_tree.Nodes.Count > 0)
             {
-                if (_tree.Nodes.Count == 1) _tree.Nodes[0].Expand();
+                // Opening a lone disk is a convenience for arriving at one, not a rule: a
+                // rebuild must not reopen a disk that was deliberately closed, so this only
+                // applies when there was no tree to have an opinion about.
+                if (!open.HadNodes && _tree.Nodes.Count == 1) _tree.Nodes[0].Expand();
+
                 _tree.SelectedNode = _tree.Nodes[0];   // so the detail pane is never blank
             }
             UpdateCommands();
@@ -895,7 +1074,11 @@ namespace AkaiS950Studio
             var items = d.Entries.Where(x => x.Type == type).ToList();
             if (items.Count == 0) return;
 
-            var group = new TreeNode(label + "  (" + items.Count + ")");
+            // Name is the plain label where Text carries the count. The count changes
+            // whenever anything is added or deleted, so it is the label a rebuild has to
+            // match an open group by - and an empty group is not added at all, which rules
+            // out matching them by position.
+            var group = new TreeNode(label + "  (" + items.Count + ")") { Name = label };
             foreach (var e in items)
                 group.Nodes.Add(new TreeNode(e.Name) { Tag = new FileRef(d, e) });
             parent.Nodes.Add(group);
@@ -1336,6 +1519,9 @@ namespace AkaiS950Studio
             _newProgramItem.Enabled = TargetDisk != null;
             _sliceItem.Enabled = sel != null && sel.Entry.Type == 'S';
 
+            // Only a sample has audio to put in a WAV; a programme is settings.
+            _exportWavItem.Enabled = sel != null && sel.Entry.Type == 'S';
+
             // Only samples and programs can go: the overall settings and the drum set are
             // part of the disk's furniture rather than files anyone put there.
             bool deletable = sel != null && (sel.Entry.Type == 'S' || sel.Entry.Type == 'P');
@@ -1392,6 +1578,55 @@ namespace AkaiS950Studio
 
             if (f.Entry.Type == 'S') DeleteSampleFile(f);
             else if (f.Entry.Type == 'P') DeleteProgramFile(f);
+        }
+
+        /// <summary>
+        /// Saves the selected sample as a WAV, for anything that is not an S950.
+        ///
+        /// The raw export beside this one writes the file as the disk holds it, which is
+        /// the right thing for putting back on another disk and no use at all in a DAW.
+        /// This is the other half: the audio, at its own rate, with the loop described in
+        /// the file rather than baked into it. See WavFile.
+        /// </summary>
+        void OnExportWav(object sender, EventArgs e)
+        {
+            var f = SelectedFile;
+            if (f == null || f.Entry.Type != 'S') return;
+
+            using (var dlg = new SaveFileDialog())
+            {
+                dlg.Title = "Export sample as WAV";
+                dlg.Filter = "WAV audio (*.wav)|*.wav|All files (*.*)|*.*";
+                dlg.FileName = MakeSafe(f.Entry.Name) + ".wav";
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+                try
+                {
+                    var pcm = f.Disk.SamplePcm(f.Entry);
+                    if (pcm.Length == 0)
+                    {
+                        MessageBox.Show(this, "That sample has no audio on the disk.",
+                            "Nothing to export", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+
+                    var bytes = WavFile.Build(pcm, f.Entry.SampleRate, f.Entry.LoopMode, f.Entry.LoopStart,
+                                              f.Entry.LoopEnd, f.Entry.LoopLength, f.Entry.Tuning);
+                    File.WriteAllBytes(dlg.FileName, bytes);
+
+                    bool looped = (f.Entry.LoopMode == 'L' || f.Entry.LoopMode == 'A')
+                                  && f.Entry.LoopLength >= 2;
+
+                    SetStatus("Exported " + f.Entry.Name.Trim() + " to " + dlg.FileName
+                              + "  -  " + pcm.Length + " samples at " + f.Entry.SampleRate + " Hz"
+                              + (looped ? ", loop written into the file" : ", one-shot"));
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, ex.Message, "Export failed",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
         }
 
         void OnExport(object sender, EventArgs e)
@@ -1512,6 +1747,11 @@ namespace AkaiS950Studio
             if (f.Entry.Type == 'P' || f.Entry.Type == 'S')
                 menu.Items.Add(new ToolStripMenuItem("Re&name...", null, (s, a) => RenameFile(f)));
             menu.Items.Add(new ToolStripMenuItem("&Export...", null, OnExport));
+            if (f.Entry.Type == 'S')
+                menu.Items.Add(new ToolStripMenuItem("Export as &WAV...", null, OnExportWav));
+
+            if (f.Entry.Type == 'S' || f.Entry.Type == 'P')
+                menu.Items.Add(BuildCopyToMenu(f));
 
             if (f.Entry.Type == 'S' || f.Entry.Type == 'P')
             {
@@ -1566,6 +1806,12 @@ namespace AkaiS950Studio
                 row >= 0 ? "&Delete Keygroup " + (row + 1) : "&Delete Keygroup",
                 null, (s, a) => DeleteKeygroup(f, row))
             { Enabled = row >= 0 && count > 1 });
+
+            // Onto another program, here or on another disk, with the samples it names.
+            menu.Items.Add(new ToolStripMenuItem(
+                row >= 0 ? "&Copy Keygroup " + (row + 1) + " to..." : "&Copy Keygroup to...",
+                null, (s, a) => CopyKeygroupTo(f, row))
+            { Enabled = row >= 0 });
 
             menu.Items.Add(new ToolStripSeparator());
             int picked = _keygroups.SelectedIndices.Count;
@@ -2647,6 +2893,7 @@ namespace AkaiS950Studio
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            RememberSession();
             _audio.Dispose();
             base.OnFormClosed(e);
         }

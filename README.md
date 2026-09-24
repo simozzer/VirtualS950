@@ -78,7 +78,7 @@ because it has to write the same format.
 .\test.ps1 -Audio                            # ...and open the sound card and play a chord
 ```
 
-Four checks, answering different questions:
+Seven checks, answering different questions:
 
 **`EngineCheck`** — the maths. Every mapping is compared against the number the web
 version's `audio.js` prints for the same input, so the two implementations cannot quietly
@@ -95,6 +95,45 @@ is the largest sample-to-sample jump in the rendered note against the largest on
 waveform makes on its own. A loop spliced a quarter-cycle out scores **6.0×**; snapping
 its ends to zero crossings brings it to 1.2×; the crossfade brings it to **1.0×**, which
 is to say there is no longer a join to hear.
+
+**`WavCheck`** — the WAV export, against every sample on every disk in `disks\`. The
+header is the easy half; what it really pins down is that the exported loop lands exactly
+where the player puts it, worked out independently rather than by calling the same code.
+That is not a formality — 37 of the 61 samples declare a loop longer than the sample they
+belong to, so the clamping is the common path rather than the edge case:
+
+```
+  6 disks, 61 samples, 43 looping, 37 with a loop longer than the sample
+  991 checks, ALL PASSED
+```
+
+The web version writes the same file from the same disks, and all 61 come out **byte for
+byte identical** from the two separate implementations.
+
+**`CopyCheck`** — copying between disks, across every pair in `disks\`. This one writes,
+so most of what it asserts is about what a copy must *not* disturb: every file already on
+the target is compared byte for byte afterwards, and the rebuilt image is reloaded with
+`RebuildPointers` run over it, which must find nothing left to fix. The rename and skip
+paths cannot occur in the corpus, so they are constructed:
+
+```
+  6 disks: 61 sample copies, 122 program copies, 16 already present
+  8470 checks, ALL PASSED
+```
+
+The web version does the same work from the same disks; `test\copytest.js` there is the
+other half.
+
+**`KeygroupCopyCheck`** — the same for a keygroup, which is not a file. The target program
+grows by 70 bytes in place and the keygroup arena moves under every program on the disk, so
+the pointer check is the point rather than a formality, and the keygroups already in the
+target must still say exactly what they said. Both directions, across disks and between two
+programs of one disk:
+
+```
+  122 keygroup copies across disks, 122 within one disk, 118 sample(s) brought along
+  10064 checks, ALL PASSED
+```
 
 **`PatchCheck`** — real Akai programmes, which is where the surprises are:
 

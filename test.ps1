@@ -30,6 +30,10 @@ $list   = Get-ChildItem (Join-Path $root "AkaiS950List\*.cs") |
           Where-Object { $_.Name -ne "Program.cs" } | ForEach-Object { $_.FullName }
 $studio = Join-Path $root "AkaiS950Studio\Instrument.cs"
 
+# The whole editor, for the check that drives its tree. Program.cs brings a second Main
+# with it, which is why Run-Check passes /main.
+$studioAll = Get-ChildItem (Join-Path $root "AkaiS950Studio\*.cs") | ForEach-Object { $_.FullName }
+
 $failed = @()
 
 function Run-Check($name, $sources, $arguments) {
@@ -57,6 +61,29 @@ Run-Check "PurityCheck" (@(Join-Path $root "AkaiS950Tests\PurityCheck.cs") + $en
 # bug it guards lives in the bookkeeping between a press and a release. So it needs
 # WinForms and the control itself.
 Run-Check "StuckNoteCheck" (@(Join-Path $root "AkaiS950Tests\StuckNoteCheck.cs") + $engine + @(Join-Path $root "AkaiS950Studio\PianoKeyboard.cs")) $null
+
+# The WAV export, against the disk library in the repository - which is always there, so
+# unlike PatchCheck this one needs no -Images. The web version writes the same file from
+# the same disks; test\wavtest.js over in AkaiS950Web is the other half of this pair.
+Run-Check "WavCheck" `
+    (@(Join-Path $root "AkaiS950Tests\WavCheck.cs") + $list + @(Join-Path $root "AkaiS950Studio\WavFile.cs")) `
+    (Join-Path $root "disks")
+
+# Copying between disks, across every pair in the library. This one writes, so most of
+# what it asserts is about what the copy must NOT disturb: the target's own files, and
+# the pointers the sampler reads. Also needs no -Images.
+Run-Check "CopyCheck" (@(Join-Path $root "AkaiS950Tests\CopyCheck.cs") + $list) (Join-Path $root "disks")
+
+# And the same for a keygroup, which is not a file: the target program grows in place and
+# the arena moves under every program on the disk, so the pointer check is the point.
+Run-Check "KeygroupCopyCheck" `
+    (@(Join-Path $root "AkaiS950Tests\KeygroupCopyCheck.cs") + $list) (Join-Path $root "disks")
+
+# The tree keeping its shape across a rebuild. Like StuckNoteCheck this drives the real
+# control rather than a copy of it, so it needs WinForms and the editor itself.
+Run-Check "TreeStateCheck" `
+    (@(Join-Path $root "AkaiS950Tests\TreeStateCheck.cs") + $engine + $list + $studioAll) `
+    (Join-Path $root "disks")
 
 if ($Images -ne "") {
     Run-Check "PatchCheck" `

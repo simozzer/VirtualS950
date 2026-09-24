@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using AkaiS950List;
@@ -370,6 +371,306 @@ namespace AkaiS950Studio
                 }
             }
         }
+
+        // ------------------------------------------------- copying between disks
+
+        /// <summary>
+        /// The Copy to submenu: every other disk that is open, named as the tree names it.
+        ///
+        /// Disabled with a reason rather than hidden when there is nowhere to copy to.
+        /// A menu item that is simply absent leaves you wondering whether the program can
+        /// do it at all.
+        /// </summary>
+        ToolStripMenuItem BuildCopyToMenu(FileRef f)
+        {
+            var item = new ToolStripMenuItem("&Copy to");
+
+            var others = _disks.Where(d => !ReferenceEquals(d, f.Disk)).ToList();
+            if (others.Count == 0)
+            {
+                item.Enabled = false;
+                item.ToolTipText = "Open another disk image to copy this onto.";
+                return item;
+            }
+
+            var clashes = DiskNameClashes();
+
+            foreach (var d in others.OrderBy(x => Path.GetFileNameWithoutExtension(x.Source),
+                                             StringComparer.OrdinalIgnoreCase))
+            {
+                var target = d;                  // captured per item, not per loop
+                item.DropDownItems.Add(new ToolStripMenuItem(
+                    DiskLabel(target, clashes), null, (s, a) => CopyFileTo(f, target)));
+            }
+
+            return item;
+        }
+
+        /// <summary>
+        /// Copy a sample or a program onto another open disk.
+        ///
+        /// The plan is worked out and shown before anything is written, because a copy can
+        /// quietly be bigger than it looks: a program brings every sample its zones name,
+        /// and one of those can already be there under the same name holding something
+        /// else. Nothing on the target is ever replaced - a clash is renamed - so the worst
+        /// case is a file you did not want rather than one you cannot get back.
+        /// </summary>
+        void CopyFileTo(FileRef f, AkaiDisk target)
+        {
+            if (f == null || target == null) return;
+
+            AkaiDisk.CopyPlan plan;
+            try { plan = target.PlanCopy(f.Disk, f.Entry); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, "Could not work out the copy",
+                                MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            string where = DiskLabel(target);
+
+            if (!plan.Ok)
+            {
+                MessageBox.Show(this,
+                    string.Join(Environment.NewLine, plan.Problems.ToArray()),
+                    "Will not fit on " + where, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (plan.Writes.Count == 0)
+            {
+                // Everything it would bring is already there, byte for byte.
+                SetStatus(f.Entry.Name.Trim() + " is already on " + where +
+                          ", with everything it needs.  Nothing copied.");
+                return;
+            }
+
+            if (MessageBox.Show(this, DescribeCopy(plan, target, where), "Copy to " + where,
+                                MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
+                return;
+
+            try
+            {
+                PushUndo(target, "copy " + f.Entry.Name.Trim() + " to " + where);
+
+                var landed = target.ApplyCopy(plan);
+
+                _editDisk = target;
+                RebuildTree();
+
+                // Land on what arrived - the program if one came, else the sample.
+                var show = landed.FirstOrDefault(e => e.Type == f.Entry.Type) ?? landed.LastOrDefault();
+                if (show != null) SelectFileNode(target, show);
+
+                UpdateCommands();
+
+                int samples = plan.SampleWrites;
+                string msg = "Copied " + f.Entry.Name.Trim() + " to " + where;
+
+                if (f.Entry.Type == 'P' && samples > 0)
+                    msg += " with " + samples + " sample" + (samples == 1 ? "" : "s");
+
+                int reused = plan.Items.Count(i => i.AlreadyHere);
+                if (reused > 0) msg += "  -  " + reused + " already there";
+
+                int renamed = plan.Items.Count(i => i.Renamed);
+                if (renamed > 0) msg += "  -  " + renamed + " renamed to avoid a clash";
+
+                SetStatus(msg + ".  Unsaved changes.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, "Could not copy",
+                                MessageBoxButtons.OK, MessageBoxIcon.Error);
+                RebuildTree();
+                UpdateCommands();
+            }
+        }
+
+        // ------------------------------------------------- copying a keygroup
+
+        /// <summary>
+        /// Copy one keygroup onto another program, on this disk or another open one.
+        ///
+        /// Unlike a file copy this can end on the disk it started on - moving a keygroup
+        /// between two programs of the same disk is an ordinary thing to want - so the
+        /// chooser lists every program that is open except the one being copied from.
+        /// Copying a keygroup onto its own program is what Add Keygroup already does.
+        /// </summary>
+        void CopyKeygroupTo(FileRef f, int row)
+        {
+            if (f == null || f.Entry.Type != 'P' || row < 0) return;
+
+            var clashes = DiskNameClashes();
+            var choices = new List<ProgramChoice>();
+
+            foreach (var d in _disks)
+                foreach (var p in d.Entries.Where(e => e.Type == 'P')
+                                  .OrderBy(e => e.Name.Trim(), StringComparer.OrdinalIgnoreCase))
+                {
+                    if (ReferenceEquals(d, f.Disk) && p.Slot == f.Entry.Slot) continue;
+
+                    choices.Add(new ProgramChoice
+                    {
+                        Disk = d,
+                        Program = p,
+                        Label = DiskLabel(d, clashes) + "      " + p.Name.Trim() +
+                                "   (" + AkaiDisk.KeygroupCount(p) + " keygroups)"
+                    });
+                }
+
+            if (choices.Count == 0)
+            {
+                MessageBox.Show(this,
+                    "There is no other program to copy it into. Create one, or open another disk image.",
+                    "Nowhere to copy to", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using (var dlg = new ChooseProgramDialog(
+                       "Copy keygroup " + (row + 1) + " of " + f.Entry.Name.Trim() + " into:", choices))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK || dlg.Chosen == null) return;
+
+                var target = dlg.Chosen.Disk;
+                int targetSlot = dlg.Chosen.Program.Slot;
+                string into = dlg.Chosen.Program.Name.Trim();
+                string where = DiskLabel(target, clashes);
+
+                AkaiDisk.KeygroupPlan plan;
+                try { plan = target.PlanCopyKeygroup(f.Disk, f.Entry, row, dlg.Chosen.Program); }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, ex.Message, "Could not work out the copy",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                if (!plan.Ok)
+                {
+                    MessageBox.Show(this, string.Join(Environment.NewLine, plan.Problems.ToArray()),
+                                    "Cannot copy it into " + into,
+                                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                /*
+                 * Only worth a question when something beyond the keygroup is written. A
+                 * keygroup landing on a program whose disk already holds its samples costs
+                 * one record and is undoable, and stopping to confirm that is friction.
+                 */
+                if (plan.Writes.Count > 0 || plan.Notes.Count > 0)
+                {
+                    if (MessageBox.Show(this, DescribeKeygroupCopy(plan, target, into, where),
+                                        "Copy keygroup into " + into,
+                                        MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
+                        return;
+                }
+
+                try
+                {
+                    PushUndo(target, "copy keygroup into " + into);
+
+                    int number = target.ApplyCopyKeygroup(plan);
+
+                    _editDisk = target;
+                    RebuildTree();
+
+                    var fresh = target.EntryInSlot(targetSlot);
+                    if (fresh != null) SelectFileNode(target, fresh);
+
+                    UpdateCommands();
+
+                    string msg = "Copied keygroup " + (row + 1) + " of " + f.Entry.Name.Trim() +
+                                 " into " + into + " on " + where + " as keygroup " + number;
+
+                    int brought = plan.Writes.Count;
+                    if (brought > 0)
+                        msg += "  -  " + brought + " sample" + (brought == 1 ? "" : "s") + " came with it";
+
+                    int renamed = plan.Samples.Count(i => i.Renamed);
+                    if (renamed > 0) msg += ", " + renamed + " renamed to avoid a clash";
+
+                    SetStatus(msg + ".  Unsaved changes.");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, ex.Message, "Could not copy the keygroup",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    RebuildTree();
+                    UpdateCommands();
+                }
+            }
+        }
+
+        /// <summary>What the confirmation says when a keygroup brings samples with it.</summary>
+        static string DescribeKeygroupCopy(AkaiDisk.KeygroupPlan plan, AkaiDisk target,
+                                           string into, string where)
+        {
+            var sb = new System.Text.StringBuilder();
+
+            sb.AppendLine("The keygroup names samples that are not on " + where + ".");
+            sb.AppendLine("They come with it, or it arrives silent:");
+            sb.AppendLine();
+
+            foreach (var i in plan.Samples)
+            {
+                if (i.AlreadyHere)
+                    sb.AppendLine("   sample  " + i.From + "  -  already there, left alone");
+                else if (i.Renamed)
+                    sb.AppendLine("   sample  " + i.From + "  ->  " + i.To +
+                                  "   (that name is taken by something else)");
+                else
+                    sb.AppendLine("   sample  " + i.To);
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("Takes " + plan.Blocks + " of the " + target.FreeBlocks +
+                          " block(s) free on " + where + ", and one keygroup of " + into + ".");
+
+            foreach (string note in plan.Notes)
+            {
+                sb.AppendLine();
+                sb.AppendLine(note + ".");
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>What the confirmation box says: every file, and what it will cost.</summary>
+        static string DescribeCopy(AkaiDisk.CopyPlan plan, AkaiDisk target, string where)
+        {
+            var sb = new System.Text.StringBuilder();
+
+            sb.AppendLine("Copy to " + where + ":");
+            sb.AppendLine();
+
+            foreach (var i in plan.Items)
+            {
+                string what = i.Type == 'P' ? "program" : "sample";
+
+                if (i.AlreadyHere)
+                    sb.AppendLine("   " + what + "  " + i.From + "  -  already there, left alone");
+                else if (i.Renamed)
+                    sb.AppendLine("   " + what + "  " + i.From + "  ->  " + i.To +
+                                  "   (that name is taken by something else)");
+                else
+                    sb.AppendLine("   " + what + "  " + i.To);
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("Takes " + plan.Blocks + " of the " + target.FreeBlocks +
+                          " block(s) free on " + where + ".");
+
+            foreach (string note in plan.Notes)
+            {
+                sb.AppendLine();
+                sb.AppendLine(note + ".");
+            }
+
+            return sb.ToString();
+        }
     }
 
     /// <summary>
@@ -377,6 +678,84 @@ namespace AkaiS950Studio
     /// the lowest the disk is not already using, so two programs do not answer to one
     /// program change by accident.
     /// </summary>
+    /// <summary>One program, wherever it lives, as the chooser lists it.</summary>
+    internal sealed class ProgramChoice
+    {
+        public AkaiDisk Disk;
+        public AkaiEntry Program;
+        public string Label;
+
+        public override string ToString() { return Label; }
+    }
+
+    /// <summary>
+    /// Pick a program out of everything that is open.
+    ///
+    /// A flat list rather than a tree: the disk is already in every line, and a keygroup
+    /// copy is a single choice rather than a place to go browsing. Double-clicking takes
+    /// it, which is what a list of things to choose from invites.
+    /// </summary>
+    internal sealed class ChooseProgramDialog : Form
+    {
+        readonly ListBox _list = new ListBox();
+        readonly Button _ok = new Button();
+
+        public ProgramChoice Chosen { get { return _list.SelectedItem as ProgramChoice; } }
+
+        public ChooseProgramDialog(string prompt, IList<ProgramChoice> choices)
+        {
+            Text = "Copy keygroup";
+            FormBorderStyle = FormBorderStyle.SizableToolWindow;
+            MinimizeBox = false;
+            StartPosition = FormStartPosition.CenterParent;
+            ClientSize = new Size(460, 320);
+            MinimumSize = new Size(360, 260);
+            Font = SystemFonts.MessageBoxFont;
+
+            var label = new Label
+            {
+                Bounds = new Rectangle(12, 12, 436, 20),
+                Text = prompt,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
+            Controls.Add(label);
+
+            _list.SetBounds(12, 38, 436, 232);
+            _list.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            _list.IntegralHeight = false;
+            foreach (var c in choices) _list.Items.Add(c);
+            _list.SelectedIndexChanged += (s, e) => _ok.Enabled = _list.SelectedItem != null;
+            _list.DoubleClick += (s, e) =>
+            {
+                if (_list.SelectedItem == null) return;
+                DialogResult = DialogResult.OK;
+                Close();
+            };
+            Controls.Add(_list);
+
+            _ok.Text = "Copy";
+            _ok.DialogResult = DialogResult.OK;
+            _ok.SetBounds(276, 282, 84, 26);
+            _ok.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            _ok.Enabled = false;
+            Controls.Add(_ok);
+
+            var cancel = new Button
+            {
+                Text = "Cancel",
+                DialogResult = DialogResult.Cancel,
+                Bounds = new Rectangle(364, 282, 84, 26),
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Right
+            };
+            Controls.Add(cancel);
+
+            AcceptButton = _ok;
+            CancelButton = cancel;
+
+            if (_list.Items.Count > 0) _list.SelectedIndex = 0;
+        }
+    }
+
     internal sealed class NewProgramDialog : Form
     {
         readonly TextBox _name = new TextBox();
