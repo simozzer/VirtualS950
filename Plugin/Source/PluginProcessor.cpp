@@ -68,7 +68,17 @@ VirtualS950Processor::describeParameters()
     };
 
     addTrim ("vcfCutoff", "VCF Cutoff", 99.0f);
-    addTrim ("vcfAmount", "VCF Amount", 50.0f);
+
+    /*
+     * The amount reaches twice its own range, for the same reason the envelope stages reach
+     * the whole of theirs: it is an OFFSET, and an offset of 50 cannot take a keygroup that
+     * already sits at +50 anywhere below zero. Thirty-four keygroups in the library are at
+     * +50, and inverting one of them is exactly the sort of thing this control is for.
+     *
+     * The sum is clamped to the panel's own -50..+50 afterwards, so the extra travel buys
+     * reach rather than range.
+     */
+    addTrim ("vcfAmount", "VCF Amount", 100.0f);
 
     /*
      * The two envelopes, as offsets on the panel's 0..99 for each stage.

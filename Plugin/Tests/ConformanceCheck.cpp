@@ -485,6 +485,30 @@ namespace
         check (blankUp > blankFlat * 1.02, "and the amount trim can still build one",
                blankUp, blankFlat);
 
+        /*
+         * A negative amount inverts the envelope: it pulls the cutoff BELOW the keygroup's
+         * own setting instead of above it, so the same envelope that would have opened the
+         * filter closes it. That is what the signed byte means, and three keygroups in the
+         * library use it - all at -50.
+         *
+         * Measured from a bright base, because the cutoff floor is 311 Hz and inverting a
+         * keygroup that already sits near it has nowhere to go. The library's own three do
+         * exactly that and move a tenth of an octave.
+         */
+        const auto bright = patchWith (80, 0, true);
+        const double upright  = levelAt (bright, 0.0,   0.0);
+        const double inverted = levelAt (bright, 0.0, -40.0);
+        check (inverted < upright * 0.9, "a negative amount inverts the envelope",
+               inverted, upright);
+
+        // And the trim can reach the inversion from a keygroup already at full positive
+        // amount, which an offset of only 50 could not.
+        const auto deep = patchWith (80, 50, true);
+        const double asWas   = levelAt (deep, 0.0,    0.0);
+        const double flipped = levelAt (deep, 0.0, -100.0);
+        check (flipped < asWas * 0.9, "and can reach it from a keygroup at +50",
+               flipped, asWas);
+
         // The stops still hold: a trim cannot open the filter past the reconstruction limit.
         const double wideOpen = levelAt (patchWith (99, 0, true), 0.0, 0.0);
         const double shoved   = levelAt (patchWith (99, 0, true), 99.0, 0.0);
