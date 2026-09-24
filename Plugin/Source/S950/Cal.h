@@ -82,6 +82,33 @@ namespace s950::cal
     /// Measured: 2.25 s against the VCA's 2.86.
     inline constexpr double VcfTimeScale = 0.78;
 
+    /*
+     * APPROXIMATE: the filter's release stops growing, at somewhere around a second.
+     *
+     * The envelope time curve is badly wrong for this one stage. Two takes, converting when
+     * the sweep passed a fixed probe into a release:
+     *
+     *     stored        50    60    70    80    90    99
+     *     run 1       0.35  0.38  0.42     -     -     -
+     *     run 2          -     -  1.04  1.09  1.05  1.09
+     *     the curve   0.14  0.35  0.88  2.24  5.67  13.1
+     *
+     * Run 2 covers stored 70 to 99, over which the curve climbs fifteenfold, and measures
+     * the same second throughout. Whatever the release does, it does not follow the curve,
+     * and 13 seconds is not a thing this machine does.
+     *
+     * A cap is as much as the data carries. The two takes differ by 2.5x at stored 70, and
+     * that gap is itself a warning: turning a probe crossing into a release assumes the fall
+     * is a straight line in octaves, so two sweeps of different depths disagreeing says the
+     * fall is not straight. Until something measures the SHAPE, a number fitted to these
+     * crossings would be precision that is not there.
+     *
+     * One second is taken from run 2, whose sweep sat entirely in the band short windows can
+     * actually resolve. Below the cap the curve is left alone: it gives 0.35 s at stored 60
+     * against 0.38 measured, which is as close as anything here gets.
+     */
+    inline constexpr double VcfReleaseMax = 1.0;
+
     /// Measured: a stored 50 read 19.6 dB down, so it counts decibels.
     inline constexpr double SustainDb = 39.6;
 

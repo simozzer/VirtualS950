@@ -161,8 +161,10 @@ namespace s950
         vcfDecay   = cal::envSeconds (cal::clamp (baseDecay + trims.vcfDecay, 0.0, 99.0))
                    * cal::VcfTimeScale;
         vcfSustain = cal::clamp (baseSustain + trims.vcfSustain, 0.0, 99.0) / 99.0;
-        vcfRelease = cal::envSeconds (cal::clamp (baseRelease + trims.vcfRelease, 0.0, 99.0))
-                   * cal::VcfTimeScale;
+        // capped: the filter's release stops growing about a second in - see VcfReleaseMax
+        vcfRelease = std::min (cal::VcfReleaseMax,
+                               cal::envSeconds (cal::clamp (baseRelease + trims.vcfRelease,
+                                                            0.0, 99.0)) * cal::VcfTimeScale);
     }
 
     void Voice::release()

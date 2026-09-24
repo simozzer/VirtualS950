@@ -782,6 +782,20 @@ namespace
         }
 
         /*
+         * The filter's release stops growing.
+         *
+         * Two takes measured stored 70 through 99 - fifteenfold along the envelope curve -
+         * and got the same second throughout. The cap is approximate, so what is held here
+         * is the property rather than the figure: the top of the range must not run away to
+         * the thirteen seconds the curve asks for.
+         */
+        check (s950::cal::envSeconds (99) * s950::cal::VcfTimeScale > 5.0,
+               "the envelope curve really does ask for that long",
+               s950::cal::envSeconds (99) * s950::cal::VcfTimeScale, 5.0);
+        check (s950::cal::VcfReleaseMax < 2.0,
+               "and the filter's release is capped well under it", s950::cal::VcfReleaseMax, 2.0);
+
+        /*
          * Letting go can only take energy away.
          *
          * A stored release of 0 drops the cutoff five and a half octaves in about a

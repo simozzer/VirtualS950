@@ -146,7 +146,7 @@ namespace AkaiS950Engine
             _vcfAttack = kg.VcfWritten ? Cal.EnvSeconds(kg.VcfAttack) * Cal.VcfTimeScale : 0;
             _vcfDecay = kg.VcfWritten ? Cal.EnvSeconds(kg.VcfDecay) * Cal.VcfTimeScale : 0;
             _vcfSustain = kg.VcfWritten ? Clamp01(kg.VcfSustain / 99.0) : 1;
-            _vcfRelease = kg.VcfWritten ? Cal.EnvSeconds(kg.VcfRelease) * Cal.VcfTimeScale : 0;
+            _vcfRelease = kg.VcfWritten ? Math.Min(Cal.VcfReleaseMax, Cal.EnvSeconds(kg.VcfRelease) * Cal.VcfTimeScale) : 0;
             _vcfDepth = kg.VcfWritten ? (kg.VcfAmount / 50.0) * Cal.EnvOctaves : 0;
 
             _vcfT = 0;
@@ -225,7 +225,7 @@ namespace AkaiS950Engine
             _vcfAttack = kg.VcfWritten ? Cal.EnvSeconds(kg.VcfAttack) * Cal.VcfTimeScale : 0;
             _vcfDecay = kg.VcfWritten ? Cal.EnvSeconds(kg.VcfDecay) * Cal.VcfTimeScale : 0;
             _vcfSustain = kg.VcfWritten ? Clamp01(kg.VcfSustain / 99.0) : 1;
-            _vcfRelease = kg.VcfWritten ? Cal.EnvSeconds(kg.VcfRelease) * Cal.VcfTimeScale : 0;
+            _vcfRelease = kg.VcfWritten ? Math.Min(Cal.VcfReleaseMax, Cal.EnvSeconds(kg.VcfRelease) * Cal.VcfTimeScale) : 0;
             _vcfDepth = kg.VcfWritten ? (kg.VcfAmount / 50.0) * Cal.EnvOctaves : 0;
 
             // deliberately no _filter.Reset() - see above
