@@ -4,6 +4,9 @@
 
 #include "PluginProcessor.h"
 
+#include <memory>
+#include <vector>
+
 /*
  * The plugin's window.
  *
@@ -14,6 +17,89 @@
  * The voice count is here because it answers the first question anyone asks of a plugin
  * that is not making a sound - is it getting the notes? - without a debugger.
  */
+/*
+ * An ADSR drawn as its own shape, with the corners dragged.
+ *
+ * Four numbers on four knobs is a poor way to see an envelope: the thing you are actually
+ * adjusting is a shape, and a shape is what this shows. Drag the first corner for attack,
+ * the second for decay and sustain together, the last for release.
+ *
+ * WHAT IT DRAWS, GIVEN THAT THE CONTROLS ARE OFFSETS
+ *
+ * The parameters behind this are trims - they shift every keygroup in the programme at
+ * once - so there is no single envelope they describe. What is drawn is therefore the
+ * RESULT for one representative keygroup: the programme's own values with the trim added.
+ * Dragging moves the trim by however much that keygroup would have to move, and every other
+ * keygroup goes with it. So the shape is honest about what you will hear from that keygroup
+ * and approximate for the rest, which is the best a single picture can be.
+ *
+ * The horizontal axis is the panel's 0..99 for each stage, not seconds. The machine's
+ * envelope times are exponential - a stored 80 is nearly two seconds where 40 is thirty
+ * milliseconds - so drawing them to scale would leave every short envelope invisible in the
+ * corner. This way each stage's corner moves evenly under the mouse, which is what a control
+ * should do.
+ */
+class EnvelopeEditor : public juce::Component,
+                       public juce::SettableTooltipClient,
+                       private juce::Timer
+{
+public:
+    EnvelopeEditor (VirtualS950Processor&, bool filter);
+
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
+
+private:
+    void timerCallback() override;
+
+    /*
+     * Which corner is being pointed at. Three, not four.
+     *
+     * Sustain has no handle of its own: it is the HEIGHT of the decay corner, which drags
+     * decay sideways and sustain up and down at the same time. That is one corner doing what
+     * the shape says it does - where the decay ends is also where the sustain sits - and it
+     * is the arrangement every ADSR display uses.
+     *
+     * It briefly had a fourth, on the plateau, because a decay of zero put the decay corner
+     * exactly on top of the attack corner and left sustain unreachable. Minimum stage widths
+     * fixed that properly, at which point the extra handle was a second way to one value and
+     * one more thing on screen.
+     */
+    enum Corner { none = -1, attackCorner = 0, decayCorner = 1, releaseCorner = 2 };
+
+    /// The stages a corner drags: horizontal, then vertical. Either may be null.
+    struct Drags { const char* alongX; const char* upY; };
+    Drags dragsFor (Corner c) const;
+
+    /// The stage values as they will actually sound - the keygroup's own plus the trim.
+    struct Shown { double attack, decay, sustain, release; };
+    Shown shown() const;
+
+    /// Where the corners sit, in this component.
+    void cornerPoints (juce::Point<float>* into) const;
+
+    Corner cornerAt (juce::Point<float> where) const;
+
+    /// Move one stage so the representative keygroup lands on `value`, by trimming.
+    void trimTo (const char* id, int keygroupValue, double value, bool gesture);
+
+    juce::RangedAudioParameter* parameterFor (const char* stage) const;
+
+    VirtualS950Processor& processor;
+    const bool filter;
+
+    VirtualS950Processor::EnvelopeShape base;    // the keygroup's own values
+    Corner dragging = none, hovering = none;
+    bool   gestureOpen = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EnvelopeEditor)
+};
+
 class VirtualS950Editor : public juce::AudioProcessorEditor,
                           private juce::Timer
 {
@@ -48,6 +134,43 @@ private:
     juce::Slider gain { juce::Slider::RotaryHorizontalVerticalDrag,
                         juce::Slider::TextBoxBelow };
     juce::Label  gainLabel;
+
+    /*
+     * The player's controls, which move every keygroup of the loaded programme together.
+     *
+     * All offsets from what the disk says, so all read zero until someone turns them, and
+     * all are double-clickable back to it - which matters more here than on most controls,
+     * because zero is not merely a default, it is "play what is on the floppy".
+     *
+     * Held as one array with their labels so that laying them out, building them and
+     * attaching them are each one loop rather than nine near-identical lines. The row they
+     * belong to and the controller that moves them live here too, because the tooltip says
+     * both and nobody should have to look them up in the processor.
+     */
+    struct Knob
+    {
+        const char* id;
+        const char* name;
+        const char* group;        // which row it sits in
+        int         cc;
+
+        std::unique_ptr<juce::Slider> slider;
+        std::unique_ptr<juce::Label>  label;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+    };
+
+    std::vector<Knob> knobs;
+
+    /*
+     * The two envelopes as shapes rather than as eight knobs.
+     *
+     * Cutoff and amount stay knobs: they are single values, not stages of anything, and a
+     * knob is the right picture of a single value.
+     */
+    EnvelopeEditor vcaEnvelope { processor, false };
+    EnvelopeEditor vcfEnvelope { processor, true  };
+
+    juce::Label  vcaHeading, vcfHeading;
     juce::Label  patchLabel;
     juce::Label  voicesLabel;
 

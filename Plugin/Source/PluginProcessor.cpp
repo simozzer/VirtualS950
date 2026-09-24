@@ -27,7 +27,67 @@ VirtualS950Processor::describeParameters()
         juce::ParameterID { "gain", 1 },
         "Gain",
         juce::NormalisableRange<float> (0.0f, 2.0f, 0.0f, 0.5f),
-        0.7f));
+        0.7f,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float v, int) { return juce::String (v, 2); })));
+
+    /*
+     * The two filter trims, which apply to every keygroup of whatever programme is playing.
+     *
+     * Offsets rather than absolute settings, and centred on zero. A programme carries its
+     * own cutoff and envelope amount per keygroup - often quite different ones across the
+     * keyboard - and an absolute control would flatten all of that to a single value the
+     * moment it was touched. An offset keeps the programme's shape and moves the whole of
+     * it, which is what "brighter" means on an instrument like this.
+     *
+     * They are in the panel's own 0..99 and -50..+50 units, so the numbers on screen are the
+     * numbers the machine shows, and the measured cutoff curve is applied after the offset
+     * rather than before.
+     */
+    /*
+     * Every trim reads as a signed whole number: "+12", "-40", "0".
+     *
+     * Said here rather than on the slider, because the host shows these too - in an
+     * automation lane, on a control surface, in a generic editor - and a lane reading
+     * "12.4179993" is no use to anyone. A slider attachment overwrites whatever the slider
+     * itself was told, so the parameter is the only place this actually sticks.
+     */
+    auto addTrim = [&layout] (const char* id, const char* name, float span)
+    {
+        auto asOffset = [] (float v, int)
+        {
+            return juce::String (v >= 0.0f ? "+" : "") + juce::String (juce::roundToInt (v));
+        };
+
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { id, 1 },
+            name,
+            juce::NormalisableRange<float> (-span, span, 0.0f),
+            0.0f,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction (asOffset)));
+    };
+
+    addTrim ("vcfCutoff", "VCF Cutoff", 99.0f);
+    addTrim ("vcfAmount", "VCF Amount", 50.0f);
+
+    /*
+     * The two envelopes, as offsets on the panel's 0..99 for each stage.
+     *
+     * A span of 99 either way means a control can reach the whole of its travel whatever
+     * the programme started at: a keygroup with a decay of 80 can still be taken to 0, and
+     * one at 5 can still be taken to 99. The cost is that the middle of the knob is not the
+     * middle of the range, which is the right way round - the middle is "as recorded", and
+     * that is the value anyone wants to find again.
+     */
+    addTrim ("vcaAttack",  "VCA Attack",  99.0f);
+    addTrim ("vcaDecay",   "VCA Decay",   99.0f);
+    addTrim ("vcaSustain", "VCA Sustain", 99.0f);
+    addTrim ("vcaRelease", "VCA Release", 99.0f);
+
+    addTrim ("vcfAttack",  "VCF Attack",  99.0f);
+    addTrim ("vcfDecay",   "VCF Decay",   99.0f);
+    addTrim ("vcfSustain", "VCF Sustain", 99.0f);
+    addTrim ("vcfRelease", "VCF Release", 99.0f);
 
     return layout;
 }
@@ -93,7 +153,31 @@ VirtualS950Processor::VirtualS950Processor()
       parameters (*this, nullptr, "state", describeParameters())
 {
     gainParameter = parameters.getRawParameterValue ("gain");
-    patch         = makePlaceholderPatch();
+
+    using AT = s950::Engine::AtomicTrims;
+
+    trimControls[0] = {  74, "vcfCutoff",  &AT::cutoff     };
+    trimControls[1] = {  70, "vcfAmount",  &AT::amount     };
+    trimControls[2] = {  73, "vcaAttack",  &AT::vcaAttack  };
+    trimControls[3] = {  75, "vcaDecay",   &AT::vcaDecay   };
+    trimControls[4] = {  79, "vcaSustain", &AT::vcaSustain };
+    trimControls[5] = {  72, "vcaRelease", &AT::vcaRelease };
+    trimControls[6] = { 102, "vcfAttack",  &AT::vcfAttack  };
+    trimControls[7] = { 103, "vcfDecay",   &AT::vcfDecay   };
+    trimControls[8] = { 104, "vcfSustain", &AT::vcfSustain };
+    trimControls[9] = { 105, "vcfRelease", &AT::vcfRelease };
+
+    for (auto& t : trimControls)
+    {
+        t.value   = parameters.getRawParameterValue (t.id);
+        t.control = parameters.getParameter (t.id);
+
+        // A row naming a parameter that does not exist is a control that does nothing, and
+        // it would do nothing quietly. Better to know here than to wonder later.
+        jassert (t.value != nullptr && t.control != nullptr);
+    }
+
+    patch = makePlaceholderPatch();
 
     /*
      * The engine hands a replaced programme back to be freed, and it must be freed on this
@@ -148,6 +232,31 @@ double VirtualS950Processor::getTailLengthSeconds() const
     return s950::cal::envSeconds (99);
 }
 
+/*
+ * A controller moving a parameter.
+ *
+ * setValueNotifyingHost rather than writing the value straight into the engine, so that the
+ * knob in the window follows the controller, the host sees the move for automation, and
+ * there is one control with three ways in rather than three that disagree.
+ *
+ * The value is normalised, 0..1, which is what the host's side of a parameter always is -
+ * so 0 is the bottom of the range, 127 the top, and a controller's centre detent at 64 lands
+ * within a step of the middle, where the trim is zero and the programme plays as written.
+ *
+ * This runs on the audio thread. It is what every plugin with hard-wired CCs does, and it
+ * allocates nothing; the host takes the value and gets out of the way.
+ */
+void VirtualS950Processor::applyController (juce::RangedAudioParameter* p, int value)
+{
+    if (p == nullptr)
+        return;
+
+    const float normalised = juce::jlimit (0.0f, 1.0f, value / 127.0f);
+
+    if (p->getValue() != normalised)
+        p->setValueNotifyingHost (normalised);
+}
+
 void VirtualS950Processor::processBlock (juce::AudioBuffer<float>& buffer,
                                          juce::MidiBuffer& midi)
 {
@@ -182,7 +291,32 @@ void VirtualS950Processor::processBlock (juce::AudioBuffer<float>& buffer,
             engine->modwheel (m.getControllerValue(), at);
         else if (m.isAllNotesOff() || m.isAllSoundOff())
             engine->allNotesOff (at);
+        else if (m.isController())
+        {
+            for (const auto& t : trimControls)
+                if (t.cc == m.getControllerNumber())
+                {
+                    applyController (t.control, m.getControllerValue());
+                    break;
+                }
+        }
     }
+
+    /*
+     * The trims, after the messages rather than before.
+     *
+     * The controllers move these parameters in the loop above, and the engine reads them as
+     * it renders - which is below. Storing them first would have every controller move heard
+     * a block late.
+     *
+     * A block is the resolution, where notes get sample-accurate placement. That is the
+     * right trade: a note in the wrong place is heard as bad timing, whereas a knob arriving
+     * 5 ms late is not heard at all, and threading offsets through would mean a second event
+     * queue for something nobody could detect.
+     */
+    for (const auto& t : trimControls)
+        if (t.value != nullptr)
+            (engine->trims.*(t.target)).store (t.value->load(), std::memory_order_relaxed);
 
     // The engine is mono - the machine was, through one output - so it renders once and the
     // same signal goes to both channels.
@@ -521,6 +655,43 @@ int VirtualS950Processor::getActiveVoices() const
 juce::String VirtualS950Processor::getPatchName() const
 {
     return patch != nullptr ? juce::String (patch->name) : juce::String ("nothing loaded");
+}
+
+VirtualS950Processor::EnvelopeShape VirtualS950Processor::getEnvelope (bool filter) const
+{
+    EnvelopeShape shape;
+
+    if (patch == nullptr)
+        return shape;
+
+    for (const auto& kg : patch->keygroups)
+    {
+        if (kg.sound == nullptr || kg.sound->audio.empty())
+            continue;
+
+        if (filter)
+        {
+            // A programme with no filter envelope of its own is drawn as the flat one the
+            // engine gives it - no attack, no decay, full sustain - so the graph shows what
+            // the trims are actually shaping. See Voice::applyTrims.
+            shape.written = kg.vcfWritten;
+            shape.attack  = kg.vcfWritten ? kg.vcfAttack  : 0;
+            shape.decay   = kg.vcfWritten ? kg.vcfDecay   : 0;
+            shape.sustain = kg.vcfWritten ? kg.vcfSustain : 99;
+            shape.release = kg.vcfWritten ? kg.vcfRelease : 0;
+        }
+        else
+        {
+            shape.attack  = kg.vcaAttack;
+            shape.decay   = kg.vcaDecay;
+            shape.sustain = kg.vcaSustain;
+            shape.release = kg.vcaRelease;
+        }
+
+        break;
+    }
+
+    return shape;
 }
 
 juce::AudioProcessorEditor* VirtualS950Processor::createEditor()

@@ -70,6 +70,31 @@ public:
     /// What is loaded, for the editor to name.
     juce::String getPatchName() const;
 
+    /*
+     * One keygroup's envelope, for the editor to draw.
+     *
+     * A programme's keygroups each have their own, and the controls move all of them
+     * together - so a graph can only ever show one of them. This is the first keygroup that
+     * has a sample, which is the one a picture of "the" envelope should be of: it is what
+     * the lowest keys play, and in most of the library the keygroups agree anyway.
+     *
+     * Message thread only, and a snapshot: the editor redraws from it rather than holding a
+     * pointer into a patch that may be replaced under it.
+     */
+    struct EnvelopeShape
+    {
+        int  attack = 0, decay = 0, sustain = 99, release = 0;
+
+        /// False for an S900 programme, whose four filter bytes were never written.
+        bool written = true;
+
+        /// Both envelopes have all four stages now. Kept so the graph asks rather than
+        /// assumes, since it was not always true.
+        bool hasRelease = true;
+    };
+
+    EnvelopeShape getEnvelope (bool filter) const;
+
     // ------------------------------------------------------------------------- disks
 
     /*
@@ -174,6 +199,43 @@ private:
     juce::AudioBuffer<float> mono;
 
     std::atomic<float>* gainParameter = nullptr;
+
+    /*
+     * One player's control: a parameter, the continuous controller that moves it, and the
+     * engine field it ends up in.
+     *
+     * All three in one row on purpose. These have to agree - a parameter nothing reads, or
+     * an engine field nothing writes, is a control that silently does nothing - and keeping
+     * them apart is how that happens. Adding another means adding a row.
+     *
+     * The controller numbers are the General MIDI sound-controller assignments, so a
+     * keyboard with knobs labelled "cutoff" and "attack" reaches the right ones with no
+     * mapping: 72-79 are the standard set, and 102-105 are undefined ones taken for the
+     * filter envelope, which GM has no numbers for.
+     */
+    struct TrimControl
+    {
+        int         cc;
+        const char* id;
+
+        /// Which field of the engine's trims this one lands in.
+        std::atomic<float> s950::Engine::AtomicTrims::* target;
+
+        /// Filled in by the constructor, from the parameter tree.
+        std::atomic<float>*         value   = nullptr;
+        juce::RangedAudioParameter* control = nullptr;
+    };
+
+    static constexpr int NumTrims = 10;
+    TrimControl trimControls[NumTrims];
+
+    /*
+     * A continuous controller moving a parameter, from the audio thread.
+     *
+     * Bipolar: 0 is the bottom of the range, 127 the top, and 64 - where a controller's
+     * centre detent sits - is close enough to zero to count as "as the disk has it".
+     */
+    void applyController (juce::RangedAudioParameter* p, int value);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VirtualS950Processor)
 };

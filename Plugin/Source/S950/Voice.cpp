@@ -23,17 +23,16 @@ namespace s950
         leaveRate = sound->sourceRate * ratio;
         pos       = 0.0;
 
-        // --- amplitude envelope
-        const double depth     = clamp01 (group.velToLoudness / 99.0);
-        const double velDb     = -(127.0 - velocity) * cal::VelDbPerStep * depth;
-        const double zoneDb    = group.zoneLoudness * cal::LoudnessDbPerUnit;
-        const double sustainDb = -(1.0 - clamp01 (group.vcaSustain / 99.0)) * cal::SustainDb;
+        // --- amplitude envelope. Only the peak is fixed at the strike: it is what the
+        // velocity and the zone trim decided, and no control moves it afterwards.
+        const double depth  = clamp01 (group.velToLoudness / 99.0);
+        const double velDb  = -(127.0 - velocity) * cal::VelDbPerStep * depth;
+        const double zoneDb = group.zoneLoudness * cal::LoudnessDbPerUnit;
 
-        attack      = cal::envSeconds (group.vcaAttack) * cal::AttackScale;
-        decay       = cal::envSeconds (group.vcaDecay);
-        releaseTime = cal::envSeconds (group.vcaRelease);
-        peak        = std::min (cal::dbToGain (velDb + zoneDb), 4.0);
-        sustain     = peak * cal::dbToGain (sustainDb);
+        peak = std::min (cal::dbToGain (velDb + zoneDb), 4.0);
+
+        // the times and the sustains come from the keygroup and the trims together
+        applyTrims();
 
         stage = attack > 0.0005 ? Stage::attack : Stage::decay;
         t     = 0.0;
@@ -46,7 +45,6 @@ namespace s950
          */
         ceiling    = std::min (cal::MaxRatio * leaveRate, sampleRate * 0.45);
         floorHz    = std::min (cal::FloorHz, ceiling);
-        baseCutoff = cal::cutoffHz (group.zoneFilter, leaveRate);
 
         const double track    = cal::clamp (group.keyToFilter, 0, 99) / cal::KeyFull;
         const double keyShift = (note - 60) / 12.0 * track;
@@ -55,13 +53,12 @@ namespace s950
                                 * cal::VelOctaves;
         cutoffShift = keyShift + velShift;
 
-        vcfAttack  = group.vcfWritten ? cal::envSeconds (group.vcfAttack) * cal::VcfTimeScale : 0.0;
-        vcfDecay   = group.vcfWritten ? cal::envSeconds (group.vcfDecay)  * cal::VcfTimeScale : 0.0;
-        vcfSustain = group.vcfWritten ? clamp01 (group.vcfSustain / 99.0) : 1.0;
-        vcfDepth   = group.vcfWritten ? (group.vcfAmount / 50.0) * cal::EnvOctaves : 0.0;
+        vcfT          = 0.0;
+        vcfReleasing  = false;
+        vcfReleaseT   = 0.0;
 
         filter.reset();
-        filter.setCutoff (cutoffNow (0.0), sampleRate);
+        filter.setCutoff (cutoffNow(), sampleRate);
 
         // --- the LFO
         const double own = group.lfoDepth * cal::LfoDepthCentsPerUnit;
@@ -93,21 +90,16 @@ namespace s950
         leaveRate = sound->sourceRate * ratio;
 
         // --- amplitude. The targets move; the gain walks to them from where it is.
-        const double depth     = clamp01 (group.velToLoudness / 99.0);
-        const double velDb     = -(127.0 - velocity) * cal::VelDbPerStep * depth;
-        const double zoneDb    = group.zoneLoudness * cal::LoudnessDbPerUnit;
-        const double sustainDb = -(1.0 - clamp01 (group.vcaSustain / 99.0)) * cal::SustainDb;
+        const double depth  = clamp01 (group.velToLoudness / 99.0);
+        const double velDb  = -(127.0 - velocity) * cal::VelDbPerStep * depth;
+        const double zoneDb = group.zoneLoudness * cal::LoudnessDbPerUnit;
 
-        attack      = cal::envSeconds (group.vcaAttack) * cal::AttackScale;
-        decay       = cal::envSeconds (group.vcaDecay);
-        releaseTime = cal::envSeconds (group.vcaRelease);
-        peak        = std::min (cal::dbToGain (velDb + zoneDb), 4.0);
-        sustain     = peak * cal::dbToGain (sustainDb);
+        peak = std::min (cal::dbToGain (velDb + zoneDb), 4.0);
+        applyTrims();
 
         // --- filter
         ceiling    = std::min (cal::MaxRatio * leaveRate, sampleRate * 0.45);
         floorHz    = std::min (cal::FloorHz, ceiling);
-        baseCutoff = cal::cutoffHz (group.zoneFilter, leaveRate);
 
         const double track    = cal::clamp (group.keyToFilter, 0, 99) / cal::KeyFull;
         const double keyShift = (note - 60) / 12.0 * track;
@@ -115,11 +107,6 @@ namespace s950
                                 * (cal::clamp (group.velToFilter, 0, 99) / 99.0)
                                 * cal::VelOctaves;
         cutoffShift = keyShift + velShift;
-
-        vcfAttack  = group.vcfWritten ? cal::envSeconds (group.vcfAttack) * cal::VcfTimeScale : 0.0;
-        vcfDecay   = group.vcfWritten ? cal::envSeconds (group.vcfDecay)  * cal::VcfTimeScale : 0.0;
-        vcfSustain = group.vcfWritten ? clamp01 (group.vcfSustain / 99.0) : 1.0;
-        vcfDepth   = group.vcfWritten ? (group.vcfAmount / 50.0) * cal::EnvOctaves : 0.0;
 
         // deliberately no filter.reset() - see the note on adopt()
 
@@ -129,6 +116,53 @@ namespace s950
         lfoStep     = 2.0 * 3.14159265358979323846
                       * (cal::LfoRateHzAtZero + group.lfoRate * cal::LfoRateHzPerUnit) / sampleRate;
         fadeSeconds = cal::LfoDelayFadeConstant / std::max (1, 100 - group.lfoDelay);
+    }
+
+    /*
+     * The envelope times and levels, from the keygroup and the player's trims together.
+     *
+     * Everything here is cheap and everything here can move while a note sounds, so it is
+     * redone at the top of every control block rather than kept from the strike. Changing
+     * a time under a running envelope is well defined: advanceStage compares where the note
+     * has got to against the time as it is NOW, so shortening a decay past the point already
+     * reached simply moves the note on to its sustain.
+     *
+     * The peak is not here. That is what the velocity and the zone loudness decided when the
+     * key went down, and no control reaches back to change how hard a note was struck.
+     */
+    void Voice::applyTrims()
+    {
+        attack      = cal::envSeconds (trimmed (kg->vcaAttack,  trims.vcaAttack)) * cal::AttackScale;
+        decay       = cal::envSeconds (trimmed (kg->vcaDecay,   trims.vcaDecay));
+        releaseTime = cal::envSeconds (trimmed (kg->vcaRelease, trims.vcaRelease));
+
+        const double sustainDb =
+            -(1.0 - trimmed (kg->vcaSustain, trims.vcaSustain) / 99.0) * cal::SustainDb;
+        sustain = peak * cal::dbToGain (sustainDb);
+
+        /*
+         * An S900 programme left its four VCF bytes blank: it has no filter envelope at all,
+         * rather than one set to whatever a space happens to be as a number.
+         *
+         * Those keygroups still get the player's controls, they simply start from a flat
+         * envelope - no attack, no decay, full sustain - which moves nothing until something
+         * is dialled in. Refusing to shape them, which is what this did at first, left a
+         * whole class of programmes with four controls that did nothing and no way to tell
+         * why. Untrimmed the result is identical either way: an amount of zero is no
+         * movement, whatever shape it is applied to.
+         */
+        const double baseAttack  = kg->vcfWritten ? kg->vcfAttack  : 0;
+        const double baseDecay   = kg->vcfWritten ? kg->vcfDecay   : 0;
+        const double baseSustain = kg->vcfWritten ? kg->vcfSustain : 99;
+        const double baseRelease = kg->vcfWritten ? kg->vcfRelease : 0;
+
+        vcfAttack  = cal::envSeconds (cal::clamp (baseAttack + trims.vcfAttack, 0.0, 99.0))
+                   * cal::VcfTimeScale;
+        vcfDecay   = cal::envSeconds (cal::clamp (baseDecay + trims.vcfDecay, 0.0, 99.0))
+                   * cal::VcfTimeScale;
+        vcfSustain = cal::clamp (baseSustain + trims.vcfSustain, 0.0, 99.0) / 99.0;
+        vcfRelease = cal::envSeconds (cal::clamp (baseRelease + trims.vcfRelease, 0.0, 99.0))
+                   * cal::VcfTimeScale;
     }
 
     void Voice::release()
@@ -143,6 +177,12 @@ namespace s950
         releaseFrom = gain;
         stage       = Stage::release;
         t           = 0.0;
+
+        // The filter lets go at the same moment, from wherever its own envelope had reached -
+        // which is why that is taken here rather than assumed to be the sustain level.
+        vcfReleaseFrom = vcfEnvelopeHeld (vcfT);
+        vcfReleasing   = true;
+        vcfReleaseT    = 0.0;
     }
 
     void Voice::render (float* buffer, int count, double sharedPhase)
@@ -159,8 +199,10 @@ namespace s950
         {
             const int n = std::min (ControlBlock, count - done);
 
-            // --- the modulators, once per block
-            filter.setCutoff (cutoffNow (t), sampleRate);
+            // --- the modulators, once per block. The envelopes are rebuilt from the trims
+            // first, so a control moved under a held note is heard on that note.
+            applyTrims();
+            filter.setCutoff (cutoffNow(), sampleRate);
 
             const double fade = fadeSeconds > 0.0005
                               ? (fadeT >= fadeSeconds ? 1.0 : fadeT / fadeSeconds) : 1.0;
@@ -219,6 +261,10 @@ namespace s950
             t     += n * dt;
             fadeT += n * dt;
 
+            // the filter's clock, which no amplitude stage change resets
+            vcfT += n * dt;
+            if (vcfReleasing) vcfReleaseT += n * dt;
+
             lfoPhase += lfoStep * n;
             if (lfoPhase > 2.0 * 3.14159265358979323846)
                 lfoPhase -= 2.0 * 3.14159265358979323846;
@@ -228,19 +274,57 @@ namespace s950
         }
     }
 
-    double Voice::cutoffNow (double at) const
+    /*
+     * Where the cutoff is, `at` seconds into the note.
+     *
+     * The base and the depth are worked out here rather than kept from the note's start,
+     * because the player's two trims sit on top of them and those move while the note is
+     * held. Both are applied in the panel's own units - the trim is added to the stored
+     * 0..99 cutoff and to the signed amount, and the measured curve is read afterwards -
+     * so the control bends the filter the way the machine's own does, steepening as it
+     * climbs, rather than sliding it a flat number of octaves.
+     *
+     * With both trims at zero this is exactly what it was before they existed, which is
+     * what keeps the conformance numbers honest.
+     */
+    double Voice::vcfEnvelopeHeld (double at) const
     {
-        double env;
-
         if (at < vcfAttack)
-            env = vcfAttack > 0 ? at / vcfAttack : 1.0;
-        else if (at < vcfAttack + vcfDecay)
-            env = vcfDecay > 0 ? 1.0 - (1.0 - vcfSustain) * ((at - vcfAttack) / vcfDecay)
-                               : vcfSustain;
-        else
-            env = vcfSustain;
+            return vcfAttack > 0 ? at / vcfAttack : 1.0;
 
-        const double hz = baseCutoff * std::pow (2.0, cutoffShift + env * vcfDepth);
+        if (at < vcfAttack + vcfDecay)
+            return vcfDecay > 0 ? 1.0 - (1.0 - vcfSustain) * ((at - vcfAttack) / vcfDecay)
+                                : vcfSustain;
+        return vcfSustain;
+    }
+
+    double Voice::cutoffNow() const
+    {
+        /*
+         * The release runs the envelope's contribution back to nothing in a straight line -
+         * the same shape the decay has - so the filter returns to the keygroup's own cutoff
+         * as the note dies, rather than holding whatever brightness it happened to have when
+         * the key came up.
+         */
+        const double env = vcfReleasing
+            ? (vcfRelease > 0.0005
+                   ? vcfReleaseFrom * std::max (0.0, 1.0 - vcfReleaseT / vcfRelease)
+                   : 0.0)
+            : vcfEnvelopeHeld (vcfT);
+
+        const double base = cal::cutoffHz (kg->zoneFilter + trims.cutoff, leaveRate);
+
+        /*
+         * A programme with no filter envelope of its own contributes no amount, so an
+         * untrimmed keygroup moves the cutoff by nothing at all - exactly as before these
+         * controls existed. Dial an amount in and it has the flat envelope above to apply it
+         * to, which is a constant offset until a decay or a sustain is dialled in as well.
+         */
+        const double baseAmount = kg->vcfWritten ? kg->vcfAmount : 0;
+        const double depth =
+            (cal::clamp (baseAmount + trims.amount, -50.0, 50.0) / 50.0) * cal::EnvOctaves;
+
+        const double hz = base * std::pow (2.0, cutoffShift + env * depth);
         return hz > ceiling ? ceiling : (hz < floorHz ? floorHz : hz);
     }
 

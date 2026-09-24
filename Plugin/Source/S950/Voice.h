@@ -7,6 +7,26 @@
 namespace s950
 {
     /*
+     * The player's controls, sitting on top of whatever the programme says.
+     *
+     * Every one is an OFFSET in the panel's own units, and every one is zero by default, so
+     * a programme plays exactly as the disk describes it until something is moved. That is
+     * the whole point of an instrument built around a floppy: an absolute control would
+     * flatten a programme's keygroups to one value the moment it was touched, where an
+     * offset moves the shape and keeps it.
+     *
+     * The times and sustains are added to a stored 0..99 and clamped back into it; the
+     * filter amount is added to a signed -50..+50.
+     *
+     */
+    struct Trims
+    {
+        double cutoff = 0.0, amount = 0.0;
+        double vcaAttack = 0.0, vcaDecay = 0.0, vcaSustain = 0.0, vcaRelease = 0.0;
+        double vcfAttack = 0.0, vcfDecay = 0.0, vcfSustain = 0.0, vcfRelease = 0.0;
+    };
+
+    /*
      * One sounding note.
      *
      * Everything a voice does happens in render(), a block at a time, and nothing in here
@@ -56,6 +76,19 @@ namespace s950
          */
         void adopt (const KeygroupPatch& kg);
 
+        /*
+         * The player's own trims, on top of whatever the keygroup says.
+         *
+         * Both are in the panel's own units, because that is where they mean something: the
+         * cutoff curve is a measured table against the stored 0..99, so adding to the stored
+         * value bends the filter the way the machine's own knob would. Adding octaves instead
+         * would be a different, straighter control that the S950 does not have.
+         *
+         * Set by the engine before every stretch it renders, so moving the control is heard
+         * on notes that are already sounding rather than only on the next one.
+         */
+        void setTrims (const Trims& set) { trims = set; }
+
         /// Let go of the key. The note falls at its own release rate.
         void release();
 
@@ -73,13 +106,51 @@ namespace s950
 
     private:
         /// How often the modulators are recomputed. 32 at 48 kHz is 0.67 ms.
+        /*
+         * How often the modulators are recomputed. 32 at 48 kHz is 0.67 ms.
+         *
+         * This is also how often the filter is retuned, and that is the tighter constraint.
+         * The fastest release the machine has drops the cutoff five and a half octaves in
+         * about a millisecond, and a sixth-order cascade moved that far in ONE step - while
+         * keeping the state the old coefficients left behind - rings instead of closing.
+         * Stepping this cascade from 17760 Hz to 311 Hz against a signal peaking at 1.0:
+         *
+         *     block    64     32     16      8      4      1
+         *     peak   17.85   1.24   2.49   2.29   1.83   1.57
+         *
+         * The cliff is between 64 and 32; below that the numbers are one realisation of a
+         * sweep that overshoots a little whatever the step, and the scatter is the sawtooth
+         * landing differently against each retune. So 32 is already on the right side of it
+         * and going finer buys nothing for four times the modulator work.
+         *
+         * The web build bakes its filter with a 64-sample block and DID ring, at nine times
+         * full scale; its release renderer uses 8 for that reason.
+         */
         static constexpr int ControlBlock = 32;
 
         enum class Stage { idle, attack, decay, sustain, release };
 
-        double cutoffNow (double t) const;
+        double cutoffNow() const;
+
+        /// The filter envelope while the key is still down: attack, decay, then sustain.
+        double vcfEnvelopeHeld (double at) const;
         double envelopeAfter (double ahead) const;
         void   advanceStage();
+
+        /*
+         * Work the envelope times and levels out from the keygroup plus the trims.
+         *
+         * Called at the top of every control block, not once when the note starts, so that
+         * moving a control is heard on notes already sounding. That is what a control is;
+         * a value only read at note-on would be a setting.
+         */
+        void applyTrims();
+
+        /// A stored 0..99 panel value with its trim added, back inside 0..99.
+        static double trimmed (int stored, double by)
+        {
+            return cal::clamp (stored + by, 0.0, 99.0);
+        }
 
         /// A straight line in decibels from one gain to another.
         static double fall (double from, double to, double u)
@@ -120,8 +191,59 @@ namespace s950
         double gain = 0.0, releaseFrom = 0.0;
 
         // filter envelope
-        double vcfAttack = 0.0, vcfDecay = 0.0, vcfSustain = 1.0, vcfDepth = 0.0;
-        double baseCutoff = 1000.0, cutoffShift = 0.0, ceiling = 16000.0, floorHz = 311.0;
+        double vcfAttack = 0.0, vcfDecay = 0.0, vcfSustain = 1.0, vcfRelease = 0.0;
+        double cutoffShift = 0.0, ceiling = 16000.0, floorHz = 311.0;
+
+        /*
+         * The filter envelope's own clock, counting from the note on.
+         *
+         * NOT `t`, which is how far the AMPLITUDE envelope has got into its current stage and
+         * is reset to zero every time that stage changes. Driving the filter from it made the
+         * filter envelope restart whenever the amplitude one moved attack -> decay and again
+         * decay -> sustain, so a programme with a slow amplitude decay swept its filter two or
+         * three times over. It went unnoticed because most of the library has an instant
+         * attack and decay, which resets a clock that has barely started.
+         */
+        double vcfT = 0.0;
+
+        /*
+         * The filter's release, separate from the amplitude's.
+         *
+         * The envelope falls from wherever it had reached back to nothing - and nothing means
+         * the keygroup's own cutoff, the envelope's contribution decaying away rather than the
+         * filter slamming shut. Kept apart from `stage` because a one-shot keygroup ignores
+         * note-off completely and then neither envelope releases.
+         */
+        bool   vcfReleasing = false;
+        double vcfReleaseFrom = 0.0, vcfReleaseT = 0.0;
+
+        /*
+         * The base cutoff and the envelope depth are NOT cached here, where everything else
+         * about the note is. They come off the keygroup afresh in cutoffNow(), because the
+         * trims move under a held note and a cached pair would freeze the control until the
+         * next key was struck.
+         *
+         * The trims are taken as they arrive, NOT smoothed, and that is a decision rather
+         * than an oversight.
+         *
+         * Measured, by stepping the trim mid-note and comparing the output's slew at the
+         * change with the slew the waveform reaches anyway:
+         *
+         *     one CC step (1.56 units)   1.09x   - lost in the signal
+         *     a fast drag (25 units)     2.84x   - a click
+         *     slammed shut (-60 units)   0.05x   - closing is always safe
+         *
+         * So the only thing that clicks is a large jump applied in one lump: a preset
+         * recall, a typed value, a double-click back to zero, or a step in an automation
+         * lane. Continuous moves - a controller sweep, a dragged knob, smoothed automation -
+         * arrive in steps around the size of the first row, and those are inaudible.
+         *
+         * A glide was tried and taken out again. It cost 15 ms of lag on every move, which
+         * is felt on a filter sweep played to a beat, and the machine itself had no such
+         * thing. Where a slow move is wanted, the host can ramp the parameter, which is the
+         * right place for it: the plugin should not decide how fast a player's hand moves.
+         */
+        Trims trims;
 
         // the LFO
         double lfoCents = 0.0, lfoPhase = 0.0, lfoStep = 0.0;

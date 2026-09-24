@@ -84,6 +84,381 @@ namespace
     }
 }
 
+// ============================================================================ envelopes
+
+namespace
+{
+    // The shape's own colours, kept together so the two graphs cannot drift apart.
+    const juce::Colour envBack   { 0xff17191d };
+    const juce::Colour envGrid   { 0xff2b2f36 };
+    const juce::Colour envLine   { 0xff45c8dc };
+    const juce::Colour envHandle { 0xffe9a33a };
+    const juce::Colour envFaint  { 0xff707888 };
+
+    /*
+     * The readout has to be READ. It was the same grey as the hints around it, on a dark
+     * panel, at eleven points - which is fine for something you glance past and no use at
+     * all for the four numbers the graph exists to tell you.
+     */
+    const juce::Colour envText { 0xffd6dde8 };
+
+    /*
+     * How much of the width each stage may take.
+     *
+     * The sustain is a level, not a time, so it gets a fixed plateau to be drawn along
+     * rather than a share of the width that grows and shrinks.
+     */
+    constexpr float stageWidth = 0.26f;
+    constexpr float holdWidth  = 0.16f;
+
+    constexpr float handleSize = 7.0f;
+
+    /*
+     * The shortest a stage is ever DRAWN, as a fraction of its own width.
+     *
+     * A stage of zero is the common case - most of the library has an instant attack and no
+     * decay - and drawn honestly it puts that stage's corner exactly on top of the one
+     * before it, where it cannot be grabbed. That is not a small blemish: with decay at 0,
+     * decay AND sustain both hid under the attack handle, so three of the four stages were
+     * unreachable and the only way back was a controller.
+     *
+     * So every stage keeps a sliver of width whatever it holds. The shape then tells a small
+     * lie about a stage of zero, which is why the numbers are printed above it, and it is the
+     * same lie every hardware editor tells for the same reason.
+     */
+    constexpr float minStage = 0.18f;
+}
+
+EnvelopeEditor::EnvelopeEditor (VirtualS950Processor& p, bool isFilter)
+    : processor (p), filter (isFilter)
+{
+    base = processor.getEnvelope (filter);
+    startTimerHz (20);
+}
+
+juce::RangedAudioParameter* EnvelopeEditor::parameterFor (const char* stage) const
+{
+    return processor.parameters.getParameter (juce::String (filter ? "vcf" : "vca") + stage);
+}
+
+EnvelopeEditor::Shown EnvelopeEditor::shown() const
+{
+    auto valueOf = [this] (const char* stage, int keygroupValue)
+    {
+        auto* p = parameterFor (stage);
+        const double trim = p != nullptr ? p->convertFrom0to1 (p->getValue()) : 0.0;
+        return juce::jlimit (0.0, 99.0, keygroupValue + trim);
+    };
+
+    return { valueOf ("Attack",  base.attack),
+             valueOf ("Decay",   base.decay),
+             valueOf ("Sustain", base.sustain),
+             base.hasRelease ? valueOf ("Release", base.release) : 0.0 };
+}
+
+void EnvelopeEditor::cornerPoints (juce::Point<float>* into) const
+{
+    auto r = getLocalBounds().toFloat().reduced (handleSize + 2.0f);
+    const auto s = shown();
+
+    const float top    = r.getY();
+    const float bottom = r.getBottom();
+    const float height = r.getHeight();
+
+    auto along = [&r] (double stored)
+    {
+        return r.getWidth() * stageWidth
+             * juce::jmax (minStage, (float) (stored / 99.0));
+    };
+
+    const float xAttack = r.getX() + along (s.attack);
+    const float xDecay  = xAttack  + along (s.decay);
+
+    /*
+     * With no release stage there is nothing after the sustain, so the plateau runs to the
+     * edge instead of stopping a sixth of the way across and leaving the graph looking
+     * broken. The filter envelope simply holds where it is until the note ends, and that is
+     * what a line to the edge says.
+     */
+    const float xHold    = base.hasRelease ? xDecay + r.getWidth() * holdWidth : r.getRight();
+    const float xRelease = xHold + (base.hasRelease ? along (s.release) : 0.0f);
+
+    const float ySustain = bottom - height * (float) (s.sustain / 99.0);
+
+    into[0] = { xAttack,  top };
+    into[1] = { xDecay,   ySustain };
+    into[2] = { xRelease, base.hasRelease ? bottom : ySustain };
+    into[3] = { xHold,    ySustain };          // where the plateau ends; not draggable
+}
+
+EnvelopeEditor::Drags EnvelopeEditor::dragsFor (Corner c) const
+{
+    switch (c)
+    {
+        case attackCorner:  return { "Attack",  nullptr };
+        case decayCorner:   return { "Decay",   "Sustain" };   // sideways and up, together
+        case releaseCorner: return { "Release", nullptr };
+        default:            return { nullptr,   nullptr };
+    }
+}
+
+/*
+ * The NEAREST corner within reach, not the first one found.
+ *
+ * First-found is what made three stages ungrabbable: with a decay of 0 the decay corner sits
+ * exactly on the attack corner, and attack was simply earlier in the list, so it won every
+ * time. Minimum stage widths keep them apart now, and taking the nearest means a tie can
+ * never be settled by declaration order again.
+ */
+EnvelopeEditor::Corner EnvelopeEditor::cornerAt (juce::Point<float> where) const
+{
+    juce::Point<float> p[4];
+    cornerPoints (p);
+
+    Corner best = none;
+    float  nearest = handleSize * 2.2f;
+
+    for (int i = 0; i <= releaseCorner; ++i)
+    {
+        if (i == releaseCorner && ! base.hasRelease) continue;
+
+        const float d = where.getDistanceFrom (p[i]);
+        if (d <= nearest) { nearest = d; best = (Corner) i; }
+    }
+
+    return best;
+}
+
+void EnvelopeEditor::paint (juce::Graphics& g)
+{
+    auto all = getLocalBounds().toFloat();
+
+    g.setColour (envBack);
+    g.fillRoundedRectangle (all, 3.0f);
+
+    juce::Point<float> p[4];
+    cornerPoints (p);
+
+    auto r = getLocalBounds().toFloat().reduced (handleSize + 2.0f);
+
+    // a floor and a ceiling to read the shape against
+    g.setColour (envGrid);
+    g.drawHorizontalLine ((int) r.getY(), r.getX(), r.getRight());
+    g.drawHorizontalLine ((int) r.getBottom(), r.getX(), r.getRight());
+
+    juce::Path shape;
+    shape.startNewSubPath (r.getX(), r.getBottom());
+    shape.lineTo (p[0]);                       // up the attack
+    shape.lineTo (p[1]);                       // down the decay to the sustain
+    shape.lineTo (p[3]);                       // along the sustain
+    shape.lineTo (p[2]);                       // and away
+
+    g.setColour (envLine.withAlpha (0.14f));
+    {
+        juce::Path filled (shape);
+        filled.lineTo (p[2].x, r.getBottom());
+        filled.lineTo (r.getX(), r.getBottom());
+        filled.closeSubPath();
+        g.fillPath (filled);
+    }
+
+    g.setColour (envLine);
+    g.strokePath (shape, juce::PathStrokeType (2.0f));
+
+    for (int i = 0; i <= releaseCorner; ++i)
+    {
+        if (i == releaseCorner && ! base.hasRelease)
+            continue;
+
+        const bool lit = (dragging == i) || (dragging == none && hovering == i);
+        const float size = handleSize * (lit ? 1.25f : 1.0f);
+
+        g.setColour (envHandle);
+        g.fillRect (juce::Rectangle<float> (size, size).withCentre (p[i]));
+
+        if (lit)
+        {
+            g.setColour (juce::Colours::white);
+            g.drawRect (juce::Rectangle<float> (size, size).withCentre (p[i]), 1.0f);
+        }
+    }
+
+    /*
+     * An S900 programme never wrote its four filter bytes, so it has no envelope of its own.
+     * It is still shown and still editable - starting from a flat one that moves nothing -
+     * because refusing to draw it left those programmes with four controls that did nothing
+     * and no way to tell why. What it does say is that the shape came from nowhere.
+     */
+    if (! base.written)
+    {
+        g.setColour (envFaint);
+        g.setFont (11.0f);
+        g.drawText ("none on the disk - dial in an amount",
+                    r.removeFromBottom (16.0f), juce::Justification::centredRight);
+    }
+
+    /*
+     * What the corners read, so the graph is not only a picture.
+     *
+     * On a chip of its own, because the shape goes wherever the envelope says and any fixed
+     * corner of this component is somewhere the line sometimes is - an instant attack with
+     * full sustain puts it straight through the top-left, which is where this used to sit.
+     */
+    const auto s = shown();
+
+    // roundToInt, not String(v, 0): with zero decimal places JUCE prints the shortest form
+    // that round-trips, which put "A 76.1539" on screen where "A 76" was meant.
+    juce::String text = "A " + juce::String (juce::roundToInt (s.attack))
+                      + "   D " + juce::String (juce::roundToInt (s.decay))
+                      + "   S " + juce::String (juce::roundToInt (s.sustain));
+    if (base.hasRelease)
+        text += "   R " + juce::String (juce::roundToInt (s.release));
+
+    g.setFont (juce::Font (juce::FontOptions (12.0f)).boldened());
+    const int wide = juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), text);
+    auto chip = juce::Rectangle<int> (wide + 14, 18)
+                    .withPosition (getLocalBounds().getRight() - wide - 20, 5);
+
+    g.setColour (envBack.withAlpha (0.92f));
+    g.fillRoundedRectangle (chip.toFloat(), 3.0f);
+    g.setColour (envGrid);
+    g.drawRoundedRectangle (chip.toFloat(), 3.0f, 1.0f);
+
+    g.setColour (envText);
+    g.drawText (text, chip, juce::Justification::centred);
+}
+
+void EnvelopeEditor::mouseMove (const juce::MouseEvent& e)
+{
+    const auto was = hovering;
+    hovering = cornerAt (e.position);
+    if (hovering != was) repaint();
+}
+
+void EnvelopeEditor::mouseExit (const juce::MouseEvent&)
+{
+    if (hovering != none) { hovering = none; repaint(); }
+}
+
+void EnvelopeEditor::mouseDown (const juce::MouseEvent& e)
+{
+    dragging = cornerAt (e.position);
+    if (dragging == none) return;
+
+    // One gesture for the whole drag, so a host records it as one move rather than as a
+    // hundred, and an undo step is the drag rather than the last pixel of it.
+    gestureOpen = true;
+
+    const auto d = dragsFor (dragging);
+    if (d.alongX) if (auto* p = parameterFor (d.alongX)) p->beginChangeGesture();
+    if (d.upY)    if (auto* p = parameterFor (d.upY))    p->beginChangeGesture();
+
+    repaint();
+}
+
+void EnvelopeEditor::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragging == none) return;
+
+    auto r = getLocalBounds().toFloat().reduced (handleSize + 2.0f);
+    if (r.getWidth() <= 0 || r.getHeight() <= 0) return;
+
+    juce::Point<float> p[4];
+    cornerPoints (p);
+
+    const float perStage = r.getWidth() * stageWidth;
+    const auto  d = dragsFor (dragging);
+
+    // Each corner measures from where the one before it ended, so dragging decay does not
+    // fight attack - which is what makes the shape feel jointed rather than elastic.
+    if (d.alongX != nullptr)
+    {
+        const float from = dragging == attackCorner  ? r.getX()
+                         : dragging == decayCorner   ? p[0].x
+                                                     : p[3].x;
+
+        const int which = dragging == attackCorner ? base.attack
+                        : dragging == decayCorner  ? base.decay
+                                                   : base.release;
+
+        trimTo (d.alongX, which, (e.position.x - from) / perStage * 99.0, true);
+    }
+
+    if (d.upY != nullptr)
+        trimTo (d.upY, base.sustain,
+                (r.getBottom() - e.position.y) / r.getHeight() * 99.0, true);
+
+    repaint();
+}
+
+void EnvelopeEditor::mouseUp (const juce::MouseEvent&)
+{
+    if (! gestureOpen) { dragging = none; return; }
+
+    const auto d = dragsFor (dragging);
+    if (d.alongX) if (auto* p = parameterFor (d.alongX)) p->endChangeGesture();
+    if (d.upY)    if (auto* p = parameterFor (d.upY))    p->endChangeGesture();
+
+    gestureOpen = false;
+    dragging = none;
+    repaint();
+}
+
+/// Double-click a corner to put its stage back to whatever the disk says.
+void EnvelopeEditor::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    const auto corner = cornerAt (e.position);
+    if (corner == none) return;
+
+    auto zero = [this] (const char* stage)
+    {
+        if (auto* p = parameterFor (stage))
+        {
+            p->beginChangeGesture();
+            p->setValueNotifyingHost (p->convertTo0to1 (0.0f));
+            p->endChangeGesture();
+        }
+    };
+
+    const auto d = dragsFor (corner);
+    if (d.alongX) zero (d.alongX);
+    if (d.upY)    zero (d.upY);
+
+    repaint();
+}
+
+void EnvelopeEditor::trimTo (const char* stage, int keygroupValue, double value, bool)
+{
+    auto* p = parameterFor (stage);
+    if (p == nullptr) return;
+
+    // The control is an offset, so what goes in is the distance from where the programme
+    // already is - and it cannot ask for more than the range allows.
+    const double wanted = juce::jlimit (0.0, 99.0, value);
+    const float  trim   = (float) juce::jlimit (-99.0, 99.0, wanted - keygroupValue);
+
+    p->setValueNotifyingHost (p->convertTo0to1 (trim));
+}
+
+void EnvelopeEditor::timerCallback()
+{
+    // The programme can change under this window, and so can the parameters - from a
+    // controller, an automation lane, or the host restoring a session.
+    const auto now = processor.getEnvelope (filter);
+
+    const bool moved = now.attack != base.attack || now.decay != base.decay
+                    || now.sustain != base.sustain || now.release != base.release
+                    || now.written != base.written;
+
+    base = now;
+    if (moved) { repaint(); return; }
+
+    // Otherwise repaint anyway, cheaply: the trims move without anything telling us.
+    repaint();
+}
+
+// ============================================================================== the window
+
 VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
@@ -96,6 +471,73 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
     gainLabel.setText ("Gain", juce::dontSendNotification);
     gainLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (gainLabel);
+
+    /*
+     * The player's controls, in two rows: what the level does, and what the filter does.
+     *
+     * Zero is the middle of every one of them and is where the programme plays as the disk
+     * describes it, so each says so: double-click returns to it, and the value carries a
+     * sign so a glance tells you which way you have gone.
+     */
+    const struct { const char* id; const char* name; const char* group; int cc; } wanted[] =
+    {
+        { "vcfCutoff",  "Cutoff",  "VCF", 74 },
+        { "vcfAmount",  "Amount",  "VCF", 70 },
+    };
+
+    for (const auto& w : wanted)
+    {
+        Knob k;
+        k.id = w.id; k.name = w.name; k.group = w.group; k.cc = w.cc;
+
+        k.slider = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
+                                                   juce::Slider::TextBoxBelow);
+
+        const juce::String tip =
+            juce::String (w.group) + " " + w.name +
+            ", offset from what the disk says, across every keygroup in the programme. "
+            "Zero plays it as written. MIDI CC " + juce::String (w.cc) + ".";
+
+        k.slider->setDoubleClickReturnValue (true, 0.0);
+        k.slider->setTooltip (tip);
+        k.slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 46, 13);
+        addAndMakeVisible (*k.slider);
+
+        k.label = std::make_unique<juce::Label>();
+        k.label->setText (w.name, juce::dontSendNotification);
+        k.label->setJustificationType (juce::Justification::centred);
+        k.label->setTooltip (tip);
+        addAndMakeVisible (*k.label);
+
+        k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+            processor.parameters, w.id, *k.slider);
+
+        knobs.push_back (std::move (k));
+    }
+
+    for (auto* h : { &vcaHeading, &vcfHeading })
+    {
+        h->setJustificationType (juce::Justification::centredLeft);
+        h->setColour (juce::Label::textColourId, juce::Colours::grey);
+        addAndMakeVisible (*h);
+    }
+
+    // Short, because each now has half the width. The controller numbers are on the
+    // tooltip of the graph itself, which is where someone looking for them would point.
+    vcaHeading.setText ("VCA envelope", juce::dontSendNotification);
+    vcfHeading.setText ("VCF envelope", juce::dontSendNotification);
+
+    vcaEnvelope.setTooltip ("The amplitude envelope, across every keygroup in the programme. "
+                            "Drag the corners; double-click one to put that stage back to what "
+                            "the disk says. MIDI CC 73 attack, 75 decay, 79 sustain, 72 release.");
+
+    vcfEnvelope.setTooltip ("The filter envelope, across every keygroup in the programme. "
+                            "Drag the corners; double-click one to put that stage back to what "
+                            "the disk says. MIDI CC 102 attack, 103 decay, 104 sustain, "
+                            "105 release.");
+
+    addAndMakeVisible (vcaEnvelope);
+    addAndMakeVisible (vcfEnvelope);
 
     patchLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (patchLabel);
@@ -121,7 +563,7 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
 
     // Big enough to hold the file browser, which opens inside this window rather than as a
     // dialog of its own - see openDisk.
-    setSize (720, 500);
+    setSize (720, 720);
     startTimerHz (10);
 }
 
@@ -335,16 +777,72 @@ void VirtualS950Editor::resized()
     auto r = getLocalBounds().reduced (16);
     r.removeFromTop (48);                       // the title painted above
 
-    auto knob = r.removeFromRight (110);
-    gainLabel.setBounds (knob.removeFromBottom (20));
-    gain.setBounds (knob);
+    // Gain stays in its corner. It was there first, and it is the one control that is not
+    // an offset from the disk.
+    auto column = r.removeFromRight (110);
+    auto gainCell = column.removeFromTop (118);
+    gainLabel.setBounds (gainCell.removeFromBottom (18));
+    gain.setBounds (gainCell);
 
     r.removeFromRight (16);
+
+    /*
+     * An envelope with its heading above it, and - for the filter - its two knobs stacked in
+     * a narrow column on the right.
+     *
+     * Side by side rather than one above the other. Two full-width graphs ate the whole
+     * window for four numbers each, and there is more to put here than envelopes.
+     *
+     * The knobs belong to the filter's column because that is what they are: cutoff and
+     * amount are the filter's other two numbers, and anywhere else means hunting for them.
+     */
+    auto placeEnvelope = [this] (juce::Rectangle<int> area, juce::Label& heading,
+                                 EnvelopeEditor& envelope, const char* group)
+    {
+        heading.setBounds (area.removeFromTop (16));
+        area.removeFromTop (4);
+
+        int count = 0;
+        for (const auto& k : knobs)
+            if (juce::String (k.group) == group) ++count;
+
+        if (count > 0)
+        {
+            auto column = area.removeFromRight (78);
+            area.removeFromRight (8);
+
+            const int cell = column.getHeight() / count;
+
+            for (auto& k : knobs)
+            {
+                if (juce::String (k.group) != group) continue;
+
+                auto one = column.removeFromTop (cell);
+                k.label->setBounds (one.removeFromBottom (13));
+                k.slider->setBounds (one.reduced (1));
+            }
+        }
+
+        envelope.setBounds (area);
+    };
 
     auto row = r.removeFromTop (28);
     loadButton.setBounds (row.removeFromLeft (110));
     row.removeFromLeft (8);
     programs.setBounds (row);
+
+    // the licence line is painted along the very bottom, so leave it its strip
+    r.removeFromBottom (14);
+
+    // One row across the bottom holding both, so the space above stays free for whatever
+    // comes next.
+    auto shapes = r.removeFromBottom (196);
+
+    auto half = shapes.removeFromLeft (shapes.getWidth() / 2 - 8);
+    shapes.removeFromLeft (16);
+
+    placeEnvelope (half,   vcaHeading, vcaEnvelope, "VCA");
+    placeEnvelope (shapes, vcfHeading, vcfEnvelope, "VCF");
 
     r.removeFromTop (10);
     patchLabel.setBounds (r.removeFromTop (24));

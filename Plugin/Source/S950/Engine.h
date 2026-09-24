@@ -35,6 +35,42 @@ namespace s950
         std::atomic<float> gain { 0.7f };
 
         /*
+         * The player's trims, applied to every keygroup of whatever is loaded. See Trims.
+         *
+         * One atomic each rather than one lock around the set: they are written by the
+         * message thread and read by the audio thread, and nothing here needs them to change
+         * together. A control moved half a block before another is exactly what a pair of
+         * hands does anyway.
+         */
+        struct AtomicTrims
+        {
+            std::atomic<float> cutoff { 0.0f }, amount { 0.0f };
+            std::atomic<float> vcaAttack { 0.0f }, vcaDecay { 0.0f },
+                               vcaSustain { 0.0f }, vcaRelease { 0.0f };
+            std::atomic<float> vcfAttack { 0.0f }, vcfDecay { 0.0f },
+                               vcfSustain { 0.0f }, vcfRelease { 0.0f };
+
+            /// One reading of the lot, for a stretch of audio to be rendered against.
+            Trims read() const
+            {
+                Trims t;
+                t.cutoff     = cutoff.load (std::memory_order_relaxed);
+                t.amount     = amount.load (std::memory_order_relaxed);
+                t.vcaAttack  = vcaAttack.load (std::memory_order_relaxed);
+                t.vcaDecay   = vcaDecay.load (std::memory_order_relaxed);
+                t.vcaSustain = vcaSustain.load (std::memory_order_relaxed);
+                t.vcaRelease = vcaRelease.load (std::memory_order_relaxed);
+                t.vcfAttack  = vcfAttack.load (std::memory_order_relaxed);
+                t.vcfDecay   = vcfDecay.load (std::memory_order_relaxed);
+                t.vcfSustain = vcfSustain.load (std::memory_order_relaxed);
+                t.vcfRelease = vcfRelease.load (std::memory_order_relaxed);
+                return t;
+            }
+        };
+
+        AtomicTrims trims;
+
+        /*
          * What to play.
          *
          * Called from the message thread. The patch is handed over rather than shared: see

@@ -205,7 +205,15 @@ namespace s950
             if (kg->lfoDepth * cal::LfoDepthCentsPerUnit + wheelCents < 0.5)
                 wheelCents = 0.0;
 
-            take().start (*kg, note, velocity, sampleRate, wheelCents, sequence++);
+            /*
+             * The trims go on before start(), not after: start() works out the envelope from
+             * them and primes the filter with the cutoff at time zero, so a voice that began
+             * from untrimmed settings would attack wrongly and click its way to the right
+             * ones.
+             */
+            Voice& v = take();
+            v.setTrims (trims.read());
+            v.start (*kg, note, velocity, sampleRate, wheelCents, sequence++);
         }
     }
 
@@ -269,9 +277,16 @@ namespace s950
     {
         if (count <= 0) return;
 
+        // Read once for the whole stretch, so every voice in it is shaped by the same
+        // settings and a control moved mid-block cannot land differently on two voices.
+        const Trims now = trims.read();
+
         for (auto& v : voices)
             if (v.isActive())
+            {
+                v.setTrims (now);
                 v.render (buffer, count, sharedPhase);
+            }
 
         // The shared LFO moves with the audio, so it advances per stretch rather than
         // once per block - otherwise splitting a block would change how it sounds.

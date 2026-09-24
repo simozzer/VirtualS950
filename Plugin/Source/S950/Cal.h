@@ -129,12 +129,18 @@ namespace s950::cal
      *
      * The filter is also the reconstruction filter, so the top of its travel moves with the
      * rate the audio comes out at rather than being a fixed frequency.
+     *
+     * `stored` is a double rather than the panel's integer because the plugin's cutoff trim
+     * slides between the panel's steps: 127 MIDI values across a 198-step range lands between
+     * them constantly, and rounding would step the filter audibly. For a whole number this
+     * returns exactly what it always did - the value was widened to double on entry anyway -
+     * so the conformance numbers are untouched.
      */
-    inline double cutoffHz (int stored, double rate)
+    inline double cutoffHz (double stored, double rate)
     {
         const double ceiling = MaxRatio * (rate > 0 ? rate : 48000.0);
         const double floor   = std::min (FloorHz, ceiling);
-        const double v       = clamp (stored, 0, 99);
+        const double v       = clamp (stored, 0.0, 99.0);
 
         double hz = curveAt (CurveCount - 1, ceiling);
 
@@ -155,10 +161,17 @@ namespace s950::cal
         return clamp (hz, floor, ceiling);
     }
 
-    /// A stored 0..99 envelope time, in seconds.
-    inline double envSeconds (int stored)
+    /*
+     * A stored 0..99 envelope time, in seconds.
+     *
+     * A double for the same reason cutoffHz takes one: the plugin's envelope trims land
+     * between the panel's steps, and this curve is exponential - a whole unit is about a
+     * tenth of the time either way, which steps audibly. Truncating to int was also a silent
+     * narrowing that the compiler was right to complain about. Whole numbers are unchanged.
+     */
+    inline double envSeconds (double stored)
     {
-        const double v = clamp (stored, 0, 99) / 99.0;
+        const double v = clamp (stored, 0.0, 99.0) / 99.0;
         return (EnvMinMs * std::pow (EnvMaxMs / EnvMinMs, v)) / 1000.0;
     }
 

@@ -18,6 +18,16 @@ namespace AkaiS950Engine
     public sealed class Voice
     {
         /// <summary>How often the modulators are recomputed. 32 at 48 kHz is 0.67 ms.</summary>
+        /// <summary>
+        /// How often the modulators are recomputed. 32 at 48 kHz is 0.67 ms.
+        ///
+        /// It is also how often the filter is retuned, which is the tighter constraint: the
+        /// fastest release drops the cutoff five and a half octaves in about a millisecond,
+        /// and a sixth-order cascade moved that far in ONE step - keeping the state the old
+        /// coefficients left behind - rings instead of closing. Stepping 17760 Hz to 311 Hz
+        /// against a signal peaking at 1.0 gave 17.85 at a block of 64 and 1.24 at 32, with
+        /// no further gain below that. So 32 is already past the cliff.
+        /// </summary>
         const int ControlBlock = 32;
 
         public bool Active { get { return _stage != Stage.Idle; } }
@@ -52,8 +62,31 @@ namespace AkaiS950Engine
         double _gain, _releaseFrom;
 
         // filter envelope
-        double _vcfAttack, _vcfDecay, _vcfSustain, _vcfDepth;
+        double _vcfAttack, _vcfDecay, _vcfSustain, _vcfRelease, _vcfDepth;
         double _baseCutoff, _cutoffShift, _ceiling, _floor;
+
+        /// <summary>
+        /// The filter envelope's own clock, counting from the note on.
+        ///
+        /// NOT _t, which is what the amplitude envelope has reached in its CURRENT stage and
+        /// is reset to zero every time that stage changes. Driving the filter from it made
+        /// the filter envelope restart whenever the amplitude one moved from attack to decay
+        /// and again from decay to sustain - so a programme with a slow amplitude decay swept
+        /// its filter two or three times over. It went unnoticed because most of the library
+        /// has an instant attack and decay, which resets a clock that has barely started.
+        /// </summary>
+        double _vcfT;
+
+        /// <summary>
+        /// The filter's release, which is a separate thing from the amplitude's.
+        ///
+        /// The envelope falls from wherever it had got to back to nothing, and "nothing"
+        /// means the keygroup's own cutoff - the envelope's contribution decaying away
+        /// rather than the filter slamming shut. Held separately from _stage because a
+        /// one-shot keygroup ignores note-off entirely and neither envelope should release.
+        /// </summary>
+        bool _vcfReleasing;
+        double _vcfReleaseFrom, _vcfReleaseT;
 
         // the LFO
         double _lfoCents, _lfoPhase, _lfoStep, _fadeSeconds, _fadeT;
@@ -113,10 +146,15 @@ namespace AkaiS950Engine
             _vcfAttack = kg.VcfWritten ? Cal.EnvSeconds(kg.VcfAttack) * Cal.VcfTimeScale : 0;
             _vcfDecay = kg.VcfWritten ? Cal.EnvSeconds(kg.VcfDecay) * Cal.VcfTimeScale : 0;
             _vcfSustain = kg.VcfWritten ? Clamp01(kg.VcfSustain / 99.0) : 1;
+            _vcfRelease = kg.VcfWritten ? Cal.EnvSeconds(kg.VcfRelease) * Cal.VcfTimeScale : 0;
             _vcfDepth = kg.VcfWritten ? (kg.VcfAmount / 50.0) * Cal.EnvOctaves : 0;
 
+            _vcfT = 0;
+            _vcfReleasing = false;
+            _vcfReleaseT = 0;
+
             _filter.Reset();
-            _filter.SetCutoff(CutoffNow(0), sampleRate);
+            _filter.SetCutoff(CutoffNow(), sampleRate);
 
             // --- the LFO
             double own = kg.LfoDepth * Cal.LfoDepthCentsPerUnit;
@@ -187,6 +225,7 @@ namespace AkaiS950Engine
             _vcfAttack = kg.VcfWritten ? Cal.EnvSeconds(kg.VcfAttack) * Cal.VcfTimeScale : 0;
             _vcfDecay = kg.VcfWritten ? Cal.EnvSeconds(kg.VcfDecay) * Cal.VcfTimeScale : 0;
             _vcfSustain = kg.VcfWritten ? Clamp01(kg.VcfSustain / 99.0) : 1;
+            _vcfRelease = kg.VcfWritten ? Cal.EnvSeconds(kg.VcfRelease) * Cal.VcfTimeScale : 0;
             _vcfDepth = kg.VcfWritten ? (kg.VcfAmount / 50.0) * Cal.EnvOctaves : 0;
 
             // deliberately no _filter.Reset() - see above
@@ -210,6 +249,12 @@ namespace AkaiS950Engine
             _releaseFrom = _gain;
             _stage = Stage.Release;
             _t = 0;
+
+            // The filter lets go at the same moment, from wherever its own envelope had got
+            // to - which is why that value is taken here rather than assumed to be sustain.
+            _vcfReleaseFrom = VcfEnvelopeHeld(_vcfT);
+            _vcfReleasing = true;
+            _vcfReleaseT = 0;
         }
 
         public void Kill() { _stage = Stage.Idle; }
@@ -237,7 +282,7 @@ namespace AkaiS950Engine
                 int n = Math.Min(ControlBlock, count - done);
 
                 // --- the modulators, once per block
-                _filter.SetCutoff(CutoffNow(_t), _sampleRate);
+                _filter.SetCutoff(CutoffNow(), _sampleRate);
 
                 double fade = _fadeSeconds > 0.0005
                             ? (_fadeT >= _fadeSeconds ? 1.0 : _fadeT / _fadeSeconds) : 1.0;
@@ -292,6 +337,10 @@ namespace AkaiS950Engine
                 _gain = gainEnd;
                 _t += n * dt;
                 _fadeT += n * dt;
+
+                // the filter's clock, which no amplitude stage change resets
+                _vcfT += n * dt;
+                if (_vcfReleasing) _vcfReleaseT += n * dt;
                 _lfoPhase += _lfoStep * n;
                 if (_lfoPhase > 2.0 * Math.PI) _lfoPhase -= 2.0 * Math.PI;
 
@@ -301,14 +350,37 @@ namespace AkaiS950Engine
         }
 
 
-        double CutoffNow(double t)
+        /// <summary>
+        /// The filter envelope while the key is still down: attack, decay, then sustain.
+        /// </summary>
+        double VcfEnvelopeHeld(double t)
+        {
+            if (t < _vcfAttack) return _vcfAttack > 0 ? t / _vcfAttack : 1;
+
+            if (t < _vcfAttack + _vcfDecay)
+                return _vcfDecay > 0 ? 1 - (1 - _vcfSustain) * ((t - _vcfAttack) / _vcfDecay)
+                                     : _vcfSustain;
+            return _vcfSustain;
+        }
+
+        /// <summary>
+        /// Where the cutoff is now.
+        ///
+        /// On its own clock, and with a release. The release runs the envelope's contribution
+        /// back to nothing in a straight line, the same shape the decay has - so the filter
+        /// returns to the keygroup's own cutoff as the note dies rather than holding the
+        /// brightness it happened to have when the key came up.
+        /// </summary>
+        double CutoffNow()
         {
             double env;
-            if (t < _vcfAttack) env = _vcfAttack > 0 ? t / _vcfAttack : 1;
-            else if (t < _vcfAttack + _vcfDecay)
-                env = _vcfDecay > 0 ? 1 - (1 - _vcfSustain) * ((t - _vcfAttack) / _vcfDecay)
-                                    : _vcfSustain;
-            else env = _vcfSustain;
+
+            if (_vcfReleasing)
+                env = _vcfRelease > 0.0005
+                    ? _vcfReleaseFrom * Math.Max(0, 1 - _vcfReleaseT / _vcfRelease)
+                    : 0;
+            else
+                env = VcfEnvelopeHeld(_vcfT);
 
             double hz = _baseCutoff * Math.Pow(2.0, _cutoffShift + env * _vcfDepth);
             return hz > _ceiling ? _ceiling : (hz < _floor ? _floor : hz);

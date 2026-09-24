@@ -31,6 +31,8 @@
 #include <cmath>
 #include <memory>
 #include <vector>
+#include <utility>
+#include <algorithm>
 
 namespace
 {
@@ -363,6 +365,423 @@ namespace
 
         check (peak < 0.02, "8 kHz is stopped by a 500 Hz cutoff", peak, 0.02);
     }
+
+    // --------------------------------------------------------------- the player's trims
+
+    /*
+     * The two controls that sit on top of a programme: cutoff and envelope amount, applied
+     * to every keygroup at once.
+     *
+     * Nothing else here covers them, because everything else here is the port against the
+     * C# and the trims exist only in the plugin. They are checked by what they do to the
+     * sound rather than by reading the numbers back: a sawtooth is full of harmonics, so
+     * closing the filter takes energy out of it and the level falls. That is the property
+     * worth holding - a trim that moved a variable without moving the audio would pass any
+     * check that asked the variable.
+     */
+    void checkTrims()
+    {
+        std::printf ("\n  the player's filter trims\n");
+
+        auto patchWith = [] (int zoneFilter, int amount, bool vcfWritten)
+        {
+            auto patch = std::make_shared<s950::Patch>();
+            patch->name = "TRIM";
+
+            s950::KeygroupPatch kg;
+            kg.lowKey        = 0;
+            kg.highKey       = 127;
+            kg.keygroupIndex = 0;
+            kg.sound         = makeSaw (48000, 48000);
+            kg.vcaSustain    = 99;
+            kg.zoneFilter    = zoneFilter;
+            kg.vcfAmount     = amount;
+            kg.vcfWritten    = vcfWritten;
+            kg.vcfDecay      = 80;
+            kg.vcfSustain    = 0;
+            patch->keygroups.push_back (kg);
+            return patch;
+        };
+
+        // One note held from the start, rendered once, at whatever trims are set.
+        auto levelAt = [&] (const s950::PatchPtr& patch, double cutoffTrim, double amountTrim)
+        {
+            s950::Engine engine (48000.0);
+            engine.setPatch (patch);
+            engine.trims.cutoff.store (static_cast<float> (cutoffTrim));
+            engine.trims.amount.store (static_cast<float> (amountTrim));
+
+            std::vector<float> buffer (2400);
+            engine.noteOn (60, 100);
+            engine.render (buffer.data(), static_cast<int> (buffer.size()));
+            return rms (buffer);
+        };
+
+        const auto mid = patchWith (60, 0, true);
+
+        const double flat  = levelAt (mid,   0.0, 0.0);
+        const double shut  = levelAt (mid, -40.0, 0.0);
+        const double open  = levelAt (mid, +39.0, 0.0);
+
+        check (shut < flat * 0.9, "closing the cutoff trim takes energy out", shut, flat);
+        check (open > flat,       "opening it puts energy back",              open, flat);
+
+        // Zero has to mean "exactly as the disk says", or the instrument lies about its own
+        // programmes the moment the control exists.
+        const double again = levelAt (mid, 0.0, 0.0);
+        same ("a zero trim changes nothing", again, flat, 1e-12);
+
+        // The trim reaches a note that is ALREADY sounding, which is the whole difference
+        // between a control and a setting that waits for the next key.
+        {
+            s950::Engine engine (48000.0);
+            engine.setPatch (mid);
+
+            std::vector<float> buffer (2400);
+            engine.noteOn (60, 100);
+            engine.render (buffer.data(), static_cast<int> (buffer.size()));
+            const double before = rms (buffer);
+
+            engine.trims.cutoff.store (-40.0f);
+            engine.render (buffer.data(), static_cast<int> (buffer.size()));
+            const double after = rms (buffer);
+
+            check (after < before * 0.9, "a held note follows the trim", after, before);
+        }
+
+        /*
+         * Amount deepens an envelope the programme has. The envelope here starts open and
+         * falls, so a positive amount puts more through in the first moments.
+         *
+         * Measured from a nearly shut base rather than the mid one, because a keygroup that
+         * is already open has barely any room left to be opened further - at stored 60 the
+         * same trim moved the level 3%, which is a true result and a poor test.
+         */
+        const auto low = patchWith (30, 0, true);
+        const double amountFlat = levelAt (low, 0.0,  0.0);
+        const double amountUp   = levelAt (low, 0.0, 40.0);
+        check (amountUp > amountFlat * 1.05, "the amount trim deepens the envelope",
+               amountUp, amountFlat);
+
+        /*
+         * An S900 programme left the four VCF bytes blank, so it has no filter envelope of
+         * its own - and the player can still build one.
+         *
+         * Two things have to hold at once. Untouched, such a keygroup must sound exactly as
+         * it always did, because a programme with no envelope moves its cutoff by nothing.
+         * Touched, it must respond, or a whole class of programmes has four controls that do
+         * nothing and no way to tell why. The engine gives it a flat envelope - no attack,
+         * no decay, full sustain - which satisfies both: an amount of zero is no movement
+         * whatever shape it is applied to.
+         */
+        const auto s900 = patchWith (60, 0, false);
+
+        const double blankFlat  = levelAt (s900, 0.0,  0.0);
+        const double writtenSame = levelAt (patchWith (60, 0, true), 0.0, 0.0);
+        same ("an unwritten envelope untouched is an envelope that does nothing",
+              blankFlat, writtenSame, 1e-12);
+
+        const double blankUp = levelAt (s900, 0.0, 40.0);
+        check (blankUp > blankFlat * 1.02, "and the amount trim can still build one",
+               blankUp, blankFlat);
+
+        // The stops still hold: a trim cannot open the filter past the reconstruction limit.
+        const double wideOpen = levelAt (patchWith (99, 0, true), 0.0, 0.0);
+        const double shoved   = levelAt (patchWith (99, 0, true), 99.0, 0.0);
+        same ("the trim cannot open past the stop", shoved, wideOpen, 1e-12);
+    }
+
+    // ------------------------------------------------------------ the envelope trims
+
+    /*
+     * The four VCA stages and the three VCF ones, as offsets on the programme's own values.
+     *
+     * Checked by what they do to the shape of a note rather than by reading a variable back,
+     * for the same reason as the filter trims: a control that moved a number without moving
+     * the audio would pass any test that asked the number.
+     */
+    void checkEnvelopeTrims()
+    {
+        std::printf ("\n  the envelope trims\n");
+
+        // A flat gate - instant attack, no decay, full sustain - so anything that changes
+        // the shape is the trim and not the programme.
+        auto flatGate = []
+        {
+            auto patch = std::make_shared<s950::Patch>();
+            s950::KeygroupPatch kg;
+            kg.lowKey = 0; kg.highKey = 127; kg.keygroupIndex = 0;
+            kg.sound      = makeSaw (48000, 48000);
+            kg.vcaAttack  = 0;
+            kg.vcaDecay   = 0;
+            kg.vcaSustain = 99;
+            kg.vcaRelease = 0;
+            kg.zoneFilter = 99;
+            patch->keygroups.push_back (kg);
+            return patch;
+        };
+
+        const auto patch = flatGate();
+
+        /// Render one note, with one trim set, and say how loud it was.
+        auto withTrim = [&] (std::atomic<float> s950::Engine::AtomicTrims::* field,
+                             double value, int samples)
+        {
+            s950::Engine engine (48000.0);
+            engine.setPatch (patch);
+            (engine.trims.*field).store (static_cast<float> (value));
+
+            std::vector<float> buffer ((size_t) samples);
+            engine.noteOn (60, 100);
+            engine.render (buffer.data(), samples);
+            return rms (buffer);
+        };
+
+        using AT = s950::Engine::AtomicTrims;
+
+        // Attack: a long one means the first tenth of a second is quiet.
+        const double fast = withTrim (&AT::vcaAttack,  0.0, 4800);
+        const double slow = withTrim (&AT::vcaAttack, 70.0, 4800);
+        check (slow < fast * 0.5, "an attack trim slows the attack", slow, fast);
+
+        // Sustain: pulling it down takes level out of a gate that otherwise holds flat.
+        const double full  = withTrim (&AT::vcaSustain,   0.0, 4800);
+        const double lower = withTrim (&AT::vcaSustain, -50.0, 4800);
+        check (lower < full * 0.9, "a sustain trim lowers the level", lower, full);
+
+        // Decay: with sustain pulled down, a slower decay takes longer to get there, so
+        // more level survives the window.
+        {
+            s950::Engine quick (48000.0), slowly (48000.0);
+            std::vector<float> a (4800), b (4800);
+
+            quick.setPatch (patch);
+            quick.trims.vcaSustain.store (-99.0f);
+            quick.trims.vcaDecay.store (0.0f);
+            quick.noteOn (60, 100);
+            quick.render (a.data(), 4800);
+
+            slowly.setPatch (patch);
+            slowly.trims.vcaSustain.store (-99.0f);
+            slowly.trims.vcaDecay.store (70.0f);
+            slowly.noteOn (60, 100);
+            slowly.render (b.data(), 4800);
+
+            check (rms (b) > rms (a) * 1.1, "a decay trim slows the decay", rms (b), rms (a));
+        }
+
+        // Release: a longer one rings on after the key is let go.
+        {
+            auto ringing = [&] (double trim)
+            {
+                s950::Engine engine (48000.0);
+                engine.setPatch (patch);
+                engine.trims.vcaRelease.store (static_cast<float> (trim));
+
+                std::vector<float> buffer (2400);
+                engine.noteOn (60, 100);
+                engine.render (buffer.data(), 2400);      // held
+                engine.noteOff (60);
+                engine.render (buffer.data(), 2400);      // let go
+                return rms (buffer);
+            };
+
+            const double curt = ringing (0.0);
+            const double rings = ringing (70.0);
+            check (rings > curt * 2.0, "a release trim rings on", rings, curt);
+        }
+
+        // Nothing moved means nothing changed, which is the promise the whole set makes.
+        const double asWritten = withTrim (&AT::vcaAttack, 0.0, 4800);
+        same ("every trim at zero plays the disk", asWritten, fast, 1e-12);
+
+        /*
+         * The VCF stages reach the filter, not the level. A slower filter decay holds the
+         * sweep open for longer, so more of the sawtooth's harmonics survive the window.
+         */
+        {
+            auto swept = [&] (double decayTrim)
+            {
+                auto p = std::make_shared<s950::Patch>();
+                s950::KeygroupPatch kg;
+                kg.lowKey = 0; kg.highKey = 127; kg.keygroupIndex = 0;
+                kg.sound      = makeSaw (48000, 48000);
+                kg.vcaSustain = 99;
+                kg.zoneFilter = 20;          // nearly shut, so the envelope has somewhere to go
+                kg.vcfAmount  = 40;
+                kg.vcfWritten = true;
+                kg.vcfDecay   = 10;
+                kg.vcfSustain = 0;
+                p->keygroups.push_back (kg);
+
+                s950::Engine engine (48000.0);
+                engine.setPatch (p);
+                engine.trims.vcfDecay.store (static_cast<float> (decayTrim));
+
+                std::vector<float> buffer (9600);
+                engine.noteOn (60, 100);
+                engine.render (buffer.data(), 9600);
+                return rms (buffer);
+            };
+
+            const double brief = swept (0.0);
+            const double held  = swept (60.0);
+            check (held > brief * 1.1, "a VCF decay trim holds the sweep open", held, brief);
+        }
+
+        /*
+         * The filter's release. Let go of a note with the filter envelope wide open and the
+         * cutoff should fall back to the keygroup's own, so what rings out is duller than
+         * what was held - which it could not be while there was no release stage at all.
+         */
+        {
+            auto ringing = [&] (int releaseByte)
+            {
+                auto p = std::make_shared<s950::Patch>();
+                s950::KeygroupPatch kg;
+                kg.lowKey = 0; kg.highKey = 127; kg.keygroupIndex = 0;
+                kg.sound      = makeSaw (48000, 48000);
+                kg.vcaSustain = 99;
+                kg.vcaRelease = 60;          // long enough to hear the filter close
+                kg.zoneFilter = 20;          // nearly shut, so the envelope has somewhere to go
+                kg.vcfAmount  = 50;
+                kg.vcfWritten = true;
+                kg.vcfDecay   = 99;          // still open when the key comes up
+                kg.vcfSustain = 99;
+                kg.vcfRelease = releaseByte;
+                p->keygroups.push_back (kg);
+
+                s950::Engine engine (48000.0);
+                engine.setPatch (p);
+
+                std::vector<float> buffer (4800);
+                engine.noteOn (60, 100);
+                engine.render (buffer.data(), 4800);       // held, bright
+                const double bright = rms (buffer);
+
+                engine.noteOff (60);
+                engine.render (buffer.data(), 4800);       // let go
+                return std::pair<double, double> (bright, rms (buffer));
+            };
+
+            const auto instant = ringing (0);
+            const auto slow    = ringing (70);
+
+            // With no release time the envelope drops at once, so the tail is darker than
+            // one that closes slowly and keeps some brightness on the way down.
+            check (slow.second > instant.second * 1.05,
+                   "a filter release closes over its own time", slow.second, instant.second);
+
+            // And it does close: the tail is not simply the held sound fading.
+            check (instant.second < instant.first,
+                   "the filter falls back when the key is let go",
+                   instant.second, instant.first);
+        }
+
+        /*
+         * Letting go can only take energy away.
+         *
+         * A stored release of 0 drops the cutoff five and a half octaves in about a
+         * millisecond, and a sixth-order cascade retuned that hard - keeping the state the
+         * old coefficients left it with - can ring instead of closing. Stepped in isolation
+         * this filter peaks at 17.85 against a signal of 1.0 when retuned only every 64
+         * samples, though the engine at its own 32 has not been made to do it.
+         *
+         * So this holds the invariant rather than a number: whatever the cascade does on the
+         * way down, the note must not get LOUDER for having been let go. It is honest about
+         * what it is - a guard that would catch a bad regression, not a reproduction of the
+         * measurement above, which was taken on the filter directly and on the web build.
+         */
+        {
+            auto p = std::make_shared<s950::Patch>();
+            s950::KeygroupPatch kg;
+            kg.lowKey = 0; kg.highKey = 127; kg.keygroupIndex = 0;
+            kg.sound      = makeSaw (48000, 48000);
+            kg.vcaSustain = 99;
+            kg.vcaRelease = 70;
+            kg.zoneFilter = 20;          // nearly shut, so the fall is as far as it goes
+            kg.vcfAmount  = 50;
+            kg.vcfWritten = true;
+            kg.vcfDecay   = 99;          // still wide open when the key comes up
+            kg.vcfSustain = 99;
+            kg.vcfRelease = 0;           // and shut in a millisecond
+            p->keygroups.push_back (kg);
+
+            s950::Engine engine (48000.0);
+            engine.setPatch (p);
+
+            /*
+             * Quietly, so the ring has room to show. The master stage hard-clamps at +-1, and
+             * a sawtooth wide open already sits there - so at full gain this measures the
+             * clamp and reports 1.0 whether the filter rang or not.
+             */
+            engine.gain.store (0.25f);
+
+            std::vector<float> buffer (4800);
+            engine.noteOn (60, 100);
+            engine.render (buffer.data(), 4800);
+
+            double held = 0.0;
+            for (float v : buffer) held = std::max (held, (double) std::fabs (v));
+
+            engine.noteOff (60);
+            std::fill (buffer.begin(), buffer.end(), 0.0f);
+            engine.render (buffer.data(), 4800);
+
+            double letGo = 0.0;
+            for (float v : buffer) letGo = std::max (letGo, (double) std::fabs (v));
+
+            // Letting go can only take energy away. Anything louder than the held note is the
+            // filter ringing, and at a 32-sample block this was three and a half times it.
+            check (letGo < held * 1.2, "closing fast does not make the filter ring",
+                   letGo, held);
+        }
+    }
+
+    /*
+     * The filter envelope runs on its own clock.
+     *
+     * It used to be driven by the amplitude envelope's stage timer, which is reset to zero
+     * every time that envelope changes stage - so a programme with a slow amplitude decay
+     * restarted its filter sweep when the decay ended. Two renders that differ only in the
+     * amplitude decay must give the same filter movement, and that is what this holds.
+     */
+    void checkFilterClock()
+    {
+        std::printf ("\n  the filter envelope's own clock\n");
+
+        auto sweep = [] (int vcaDecay)
+        {
+            auto p = std::make_shared<s950::Patch>();
+            s950::KeygroupPatch kg;
+            kg.lowKey = 0; kg.highKey = 127; kg.keygroupIndex = 0;
+            kg.sound      = makeSaw (48000, 48000);
+            kg.vcaDecay   = vcaDecay;
+            kg.vcaSustain = 99;          // no level change, so only the filter can differ
+            kg.zoneFilter = 20;
+            kg.vcfAmount  = 50;
+            kg.vcfWritten = true;
+            kg.vcfDecay   = 80;
+            kg.vcfSustain = 0;
+            p->keygroups.push_back (kg);
+
+            s950::Engine engine (48000.0);
+            engine.setPatch (p);
+
+            std::vector<float> buffer (48000);
+            engine.noteOn (60, 100);
+            engine.render (buffer.data(), 48000);
+            return rms (buffer);
+        };
+
+        // A sustain of 99 means the amplitude decay changes nothing about the level; only a
+        // filter that restarted with it could make these two differ.
+        const double quickDecay = sweep (0);
+        const double slowDecay  = sweep (70);
+
+        check (std::fabs (quickDecay - slowDecay) < quickDecay * 0.02,
+               "the amplitude decay does not restart the filter", slowDecay, quickDecay);
+    }
 }
 
 int main()
@@ -376,6 +795,9 @@ int main()
     checkFilter();
     checkEngine();
     checkEventTiming();
+    checkTrims();
+    checkEnvelopeTrims();
+    checkFilterClock();
 
     std::printf ("\n  %d checks, %d failed\n\n", checks, failures);
     return failures == 0 ? 0 : 1;
