@@ -148,6 +148,19 @@ under that key.</p>
 the tree. It is off by default, on purpose: it is useful when you are hunting through a
 disk and maddening when you are editing one.</p>
 
+<h3>How hard it strikes</h3>
+
+<p>The narrow fader on the right of the keyboard sets the velocity a click carries, and it
+is worth more than it looks. Velocity opens the filter &mdash; a little over an octave
+between a middling strike and a hard one &mdash; so a programme can sound as though it has
+no filter at all simply because every key was being hit at full force. Drag the fader down
+and the same note closes right up. It also lifts the level a little, as the machine does.</p>
+
+<p>If the filter still seems to do nothing, the programme is probably written wide open
+rather than broken. The cutoff cannot go above the rate the audio leaves at, so a sample
+pitched a long way down has very little room above it, and a stored cutoff near the top of
+its range is already sitting on that limit.</p>
+
 <h2>4. Change something</h2>
 
 <p>Drag an envelope corner, or move a slider. Nearly every parameter is a slider because
@@ -225,6 +238,24 @@ nominal pitch, the loop mode, whether to normalise, and how much of the file to 
 <strong>Preview</strong> plays the converted audio before anything is written. It refuses
 outright if the result will not fit in the free blocks, and says by how much —
 <strong>Trim to Fit</strong> takes as much as will go.</p>
+
+<h3>From another disk</h3>
+
+<p>With two or more images open, right-click a sample or a program and <strong>Copy
+to</strong> lists the others. A program never travels alone: every sample its zones name
+comes with it, or it would arrive silent, so the box that appears itemises the whole set
+and what it costs in blocks before anything is written.</p>
+
+<p>Nothing on the receiving disk is ever replaced. A name already taken by a different
+file is renamed &mdash; <code>BASSLOOP</code> arrives as <code>BASSLOOP2</code>, and the
+copied program's zones are pointed at the new name so it still plays what it came with. A
+name taken by the <em>same</em> file is recognised and skipped, so copying twice costs
+nothing the second time.</p>
+
+<p>A single keygroup can go too: right-click its row and <strong>Copy Keygroup</strong>.
+That one may land on a program on the same disk, which a whole-file copy will not do,
+because moving a keygroup between two programs of one disk is an ordinary thing to want.
+It brings the one or two samples its own zones name, rather than the whole program's.</p>
 
 <h3>Taking one back out</h3>
 
