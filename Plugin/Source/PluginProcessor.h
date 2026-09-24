@@ -40,9 +40,14 @@ public:
     /*
      * The disk's programmes, as the host's own program list.
      *
-     * This is what puts them in Ableton's device title bar, so one can be picked without
-     * opening the plugin window at all - and what lets the choice be automated, or driven
-     * by a MIDI program change, both of which the host does for free once the list is here.
+     * This is what surfaces them outside this window. The wrapper turns the list into a
+     * "Program" parameter, which Ableton shows in the device itself - unfold it, or hit
+     * Configure to put it on the panel - so a programme can be picked, mapped to a macro,
+     * drawn on an automation lane or sent as a MIDI program change, none of which needs the
+     * plugin window open.
+     *
+     * The count is fixed and the names are not. getNumPrograms says why that is the only
+     * arrangement a host can actually see.
      *
      * It is the same list the combo box shows, from the same place; neither is a copy.
      */
@@ -151,6 +156,18 @@ private:
     juce::StringArray           programNames;
     int                         selectedProgram = -1;
     std::atomic<int>            diskGeneration { 0 };
+
+    /*
+     * True while the host is the one choosing.
+     *
+     * A programme the host asked for does not need announcing back to it, and announcing it
+     * would mean editing the parameter while the host is still inside the call that set it.
+     * A change made in this plugin's own window has no such caller, and does need announcing.
+     */
+    bool                        hostIsChoosing = false;
+
+    /// The host chose an empty slot; the timer puts its chooser back. See setCurrentProgram.
+    std::atomic<bool>           hostProgramOutOfStep { false };
 
     /// The engine renders one channel; the host usually wants two. Sized in prepareToPlay,
     /// because processBlock is not allowed to allocate.

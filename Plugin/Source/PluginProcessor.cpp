@@ -111,6 +111,14 @@ void VirtualS950Processor::timerCallback()
 {
     if (engine != nullptr)
         engine->collectRetiredPatch();
+
+    /*
+     * The host chose one of the empty slots. Saying what is current instead puts its chooser
+     * back on the programme that is actually sounding. See setCurrentProgram for why this
+     * waits for the timer rather than answering on the spot.
+     */
+    if (hostProgramOutOfStep.exchange (false, std::memory_order_relaxed))
+        updateHostDisplay (juce::AudioProcessorListener::ChangeDetails {}.withProgramChanged (true));
 }
 
 void VirtualS950Processor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -362,12 +370,12 @@ bool VirtualS950Processor::adoptDisk (std::unique_ptr<s950::Disk> opened, juce::
     diskGeneration.fetch_add (1, std::memory_order_relaxed);
 
     /*
-     * A new disk is a new list of programmes, and the host is showing the old one.
+     * A new disk is a new set of names on the same sixty-four slots.
      *
-     * parameterInfoChanged is what makes a host re-read the list; programChanged only says
-     * which of them is current. Hosts vary in how far they go - some rebuild the chooser,
-     * some only notice on reload - so the plugin's own combo box stays the reliable route
-     * and this is the convenience.
+     * The count cannot change - see getNumPrograms for why it must not - so there is no new
+     * parameter for the host to find. What it does need telling is that the names it last
+     * read are stale: parameterInfoChanged is what makes it read them again, and
+     * programChanged says which slot is now current.
      */
     updateHostDisplay (juce::AudioProcessorListener::ChangeDetails {}
                            .withProgramChanged (true)
@@ -384,13 +392,23 @@ juce::StringArray VirtualS950Processor::getProgramNames() const
 // --------------------------------------------------- the disk's programmes, as the host's
 
 /*
- * A host insists on at least one programme, so with no disk loaded there is exactly one and
- * it is the placeholder. Saying zero here makes some hosts unhappy and others hide the
- * chooser entirely.
+ * The whole directory, always, whether a disk is loaded or not.
+ *
+ * This has to be a constant, and the reason is in the VST3 wrapper. The program parameter
+ * the host drives is built once, while the plugin is being constructed, and only if this
+ * returns more than one. A count that starts at one and grows when a disk is loaded is
+ * therefore never seen: the parameter was never made, and no amount of telling the host
+ * afterwards can make one. That is why the programmes only ever appeared in this window.
+ *
+ * The names stay live - the wrapper calls getProgramName for a slot every time it draws it -
+ * so a fixed set of slots wearing changing names is exactly the shape a host wants.
+ *
+ * Sixty-four is the format's own limit rather than a number picked for being large: block 0
+ * holds a 64-entry directory, so no disk can have more programmes than there are slots.
  */
 int VirtualS950Processor::getNumPrograms()
 {
-    return juce::jmax (1, programNames.size());
+    return s950::Disk::DirEntries;
 }
 
 int VirtualS950Processor::getCurrentProgram()
@@ -400,6 +418,23 @@ int VirtualS950Processor::getCurrentProgram()
 
 void VirtualS950Processor::setCurrentProgram (int index)
 {
+    /*
+     * The host can land on any of the sixty-four, including the empty ones past the end of a
+     * small disk. selectProgram rightly ignores those - there is nothing to play - but that
+     * would leave the host's chooser naming a slot that is not sounding, so have the timer
+     * tell it what is and it snaps back.
+     *
+     * Not from here, though. This is the host's own call into the plugin, and answering
+     * inside it means editing a parameter while the host is still in the middle of setting
+     * it - which is a re-entrancy worth stepping around rather than finding out about.
+     */
+    if (! juce::isPositiveAndBelow (index, programNames.size()))
+    {
+        hostProgramOutOfStep.store (true, std::memory_order_relaxed);
+        return;
+    }
+
+    const juce::ScopedValueSetter<bool> choosing (hostIsChoosing, true);
     selectProgram (index);
 }
 
@@ -408,7 +443,15 @@ const juce::String VirtualS950Processor::getProgramName (int index)
     if (juce::isPositiveAndBelow (index, programNames.size()))
         return programNames[index];
 
-    return programNames.isEmpty() ? "Placeholder saw" : juce::String();
+    /*
+     * A slot past the end of this disk. There are always sixty-four and most disks fill a
+     * dozen, so the rest have to read as empty rather than as nothing: a host draws an empty
+     * name as a blank row, which looks like a fault rather than like a free slot.
+     */
+    if (programNames.isEmpty())
+        return index == 0 ? "Placeholder saw" : "- no disk -";
+
+    return "-";
 }
 
 juce::String VirtualS950Processor::getDiskName() const
@@ -454,6 +497,18 @@ void VirtualS950Processor::selectProgram (int index)
         engine->setPatch (patch);
 
     diskGeneration.fetch_add (1, std::memory_order_relaxed);
+
+    /*
+     * And tell the host, so its own chooser follows the one in this window rather than
+     * disagreeing with it. This is also the gesture Ableton listens for in Configure mode,
+     * which is how Program gets onto the device panel without hunting for it in a list two
+     * thousand long.
+     *
+     * Unless the host is where the change came from, in which case it already knows, and
+     * saying so from inside its own call is the re-entrancy setCurrentProgram avoids.
+     */
+    if (! hostIsChoosing)
+        updateHostDisplay (juce::AudioProcessorListener::ChangeDetails {}.withProgramChanged (true));
 }
 
 // ------------------------------------------------------------------- for the editor
