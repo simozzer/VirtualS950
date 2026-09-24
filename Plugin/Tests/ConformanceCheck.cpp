@@ -140,15 +140,27 @@ namespace
         for (int v = 0; v <= 99; ++v)
         {
             const double t = s950::cal::vcaAttackSeconds (v);
-            const double n = s950::cal::VcaAttackSpan / t;
 
             if (t < last - 1e-9)                          ++backwards;
             else if (std::abs (t - last) < 1e-9)          ++shared;
-            if (std::abs (n - std::round (n)) > 1e-9)
-                same ("a whole number of steps", n, std::round (n), 1e-9);
+
+            if (t > 0.0)                                  // 0 is the gate, not a ramp
+            {
+                const double n = s950::cal::VcaAttackSpan / t;
+                if (std::abs (n - std::round (n)) > 1e-9)
+                    same ("a whole number of steps", n, std::round (n), 1e-9);
+            }
 
             last = t;
         }
+
+        // Attack 0 is a hard gate - see cal::VcaAttackGate. Not measured; it is what the
+        // bottom of an attack range means.
+        same ("attack 0 is a hard gate", s950::cal::vcaAttackSeconds (0), 0.0, 1e-12);
+        check (s950::cal::vcaAttackSeconds (5) > 0.001 &&
+               s950::cal::vcaAttackSeconds (30) > 0.2,
+               "and the gate does not swallow settings that should ramp",
+               s950::cal::vcaAttackSeconds (5), 0.001);
 
         same ("the attack never shortens as the byte rises", backwards, 0);
         check (shared > 40, "and it steps rather than sliding", shared, 40);

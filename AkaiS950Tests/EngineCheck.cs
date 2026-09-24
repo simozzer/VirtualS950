@@ -78,15 +78,28 @@ static class EngineCheck
         CheckAttack(90, 5.4 / 2);
         CheckAttack(99, 5.4 / 2);
 
+        // Attack 0 is a hard gate, which is what gating a drum means - not measured, but how
+        // envelope generators are built. See Cal.VcaAttackGate.
+        Check("attack 0 is a hard gate", Cal.VcaAttackSeconds(0) == 0.0,
+              F(Cal.VcaAttackSeconds(0) * 1000, 1) + " ms");
+        Check("and the gate does not swallow settings that should ramp",
+              Cal.VcaAttackSeconds(5) > 0.001 && Cal.VcaAttackSeconds(30) > 0.2,
+              F(Cal.VcaAttackSeconds(5) * 1000, 1) + " ms at 5");
+
         int backwards = 0, shared = 0;
         double last = -1;
         for (int v = 0; v <= 99; v++)
         {
-            double t = Cal.VcaAttackSeconds(v), n = Cal.VcaAttackSpan / t;
+            double t = Cal.VcaAttackSeconds(v);
             if (t < last - 1e-9) backwards++;
             else if (Math.Abs(t - last) < 1e-9) shared++;
-            if (Math.Abs(n - Math.Round(n)) > 1e-9)
-                Check("attack " + v + " is a whole number of steps", false, F(n, 4));
+
+            if (t > 0)
+            {
+                double n = Cal.VcaAttackSpan / t;
+                if (Math.Abs(n - Math.Round(n)) > 1e-9)
+                    Check("attack " + v + " is a whole number of steps", false, F(n, 4));
+            }
             last = t;
         }
 
