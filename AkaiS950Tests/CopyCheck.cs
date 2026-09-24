@@ -131,6 +131,23 @@ static class CopyCheck
                         Check(who + ": keygroup count carried over",
                               AkaiDisk.KeygroupCount(prog) == AkaiDisk.KeygroupCount(what));
 
+                        /*
+                         * And every keygroup says what it said. Zone names can move under a
+                         * rename, so those bytes are excluded; everything else - the key
+                         * range, both envelopes, the filter and its tracking, the tuning -
+                         * has to survive, or the copy sounds different from the original
+                         * while looking identical in the list.
+                         */
+                        int shared = Math.Min(AkaiDisk.KeygroupCount(prog), AkaiDisk.KeygroupCount(what));
+                        for (int k = 0; k < shared; k++)
+                        {
+                            var want = AkaiDisk.KeygroupRecord(source, what, k);
+                            var got = AkaiDisk.KeygroupRecord(target, prog, k);
+
+                            Check(who + ": keygroup " + (k + 1) + " of the copy differs from the original",
+                                  SameKeygroupSettings(want, got));
+                        }
+
                         // Names the source could not resolve either are not this copy's fault.
                         var hopeless = new HashSet<string>(
                             source.ZoneSampleNames(what)
@@ -392,6 +409,31 @@ static class CopyCheck
                 int po = kg + AkaiDisk.KeygroupNameOffset + z * AkaiDisk.KeygroupZoneStride + 16;
                 skip.Add(po); skip.Add(po + 1);
             }
+        }
+
+        for (int i = 0; i < a.Length; i++)
+            if (a[i] != b[i] && !skip.Contains(i)) return false;
+
+        return true;
+    }
+
+    /// <summary>
+    /// Two keygroup records compared as the sampler hears them: everything except the
+    /// pointers the disk recomputes, and the ten-byte zone names, which a rename moves.
+    /// </summary>
+    static bool SameKeygroupSettings(byte[] a, byte[] b)
+    {
+        if (a == null || b == null || a.Length != b.Length) return false;
+
+        var skip = new HashSet<int>();
+        skip.Add(AkaiDisk.KeygroupChainOffset);
+        skip.Add(AkaiDisk.KeygroupChainOffset + 1);
+
+        for (int z = 0; z < 2; z++)
+        {
+            int at = AkaiDisk.KeygroupNameOffset + z * AkaiDisk.KeygroupZoneStride;
+            for (int i = 0; i < 10; i++) skip.Add(at + i);   // the name
+            skip.Add(at + 16); skip.Add(at + 17);            // its pointer
         }
 
         for (int i = 0; i < a.Length; i++)

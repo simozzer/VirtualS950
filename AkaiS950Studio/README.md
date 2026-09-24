@@ -15,6 +15,8 @@ never modified.
 - Tree of disks, grouped by file type
 - Full field detail for every file type
 - Per-keygroup sample references for programs, flagged when the sample lives on another disk
+- A velocity strip on the right of the keyboard row, because how hard the key is struck
+  is most of what the filter hears
 - A piano keyboard above the keygroup list: every mapped range gets a pale wash, the
   selected keygroup's range is highlighted solid, and clicking a mapped key selects
   the keygroup that owns it **and plays it at that key's pitch**
@@ -55,6 +57,47 @@ AkaiS950Studio.exe             reopen the last session
 AkaiS950Studio.exe E:\         load every image on the stick at startup
 AkaiS950Studio.exe disk.hfe    load one image
 ```
+
+### How hard it strikes
+
+The narrow fader on the right of the keyboard row sets the velocity a click carries, 1 to
+127, and it matters more than it looks. Velocity opens the filter: at the measured 8.34
+octaves of full-scale velocity tracking, the pivot is 65, so the fixed strike of 100 the
+keyboard used to play sat about 1.2 octaves above it. On a programme written with any
+velocity-to-filter at all, that is the difference between hearing the filter and not.
+
+The same programme, the same note, the cutoff a fifth of a second in:
+
+```
+  velocity  20   BASS/SQ BASS    847 Hz
+  velocity  40   BASS/SQ BASS   1341 Hz
+  velocity  64   BASS/SQ BASS   2329 Hz
+  velocity 100   BASS/SQ BASS   5328 Hz
+  velocity 127   BASS/SQ BASS   9911 Hz
+```
+
+Three and a half octaves of filter, and none of it reachable while the keyboard struck at
+one fixed velocity. It still starts at 100, so nothing sounds different until the fader is
+moved; drag it, or roll the wheel over it for one step at a time, ten with Ctrl held.
+
+It is drawn rather than a TrackBar, which is forty-odd pixels of chrome before it draws
+anything and disagrees with itself about which end of a vertical one is the maximum. This
+is twenty pixels wide, reads high at the top the way a fader does, and says its number
+underneath. `VelocityCheck` drives it through its own mouse handlers, the way WinForms
+would, and finds the ends of the groove by feel rather than by arithmetic so that it tests
+the mapping rather than the layout.
+
+### A filter that seems to do nothing
+
+If it does, the programme is probably written wide open rather than the filter being
+broken. The cutoff ceiling is `0.37 x the rate the audio leaves at`, and the curve reaches
+it well before the stored value reaches 99: on a 40 kHz sample, a zone filter of 84, 86,
+88 and 90 all land on exactly 17600 Hz. Two thirds of the shipped library is written at or
+past that point, which is why `ORGAN` and `GLASS BEL` cannot be filtered at all while the
+`BASS` programmes, written at 34 to 52, obviously can.
+
+So: a dark strike on a BASS programme is the filter working. A hard strike on an organ is
+the filter having nothing left to close.
 
 ### What it opens with
 
@@ -125,6 +168,7 @@ decoder benefits both.
 | `MainForm.cs` | the whole UI — tree, detail pane, keygroup pane, loading, export, save |
 | `Editors.cs` | PropertyGrid adapters for programs, keygroups and samples |
 | `PianoKeyboard.cs` | the keyboard strip that maps keygroups onto the keys |
+| `VelocitySlider.cs` | how hard the keyboard strikes, drawn as a narrow fader beside it |
 | `WaveformView.cs` | waveform envelope, markers and time ruler |
 | `SamplePlayer.cs` | wraps decoded PCM in a WAV header and plays it |
 | `WavFile.cs` | the WAV writer, including the `smpl` loop chunk — used by the export and by the player |

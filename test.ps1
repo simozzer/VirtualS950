@@ -79,6 +79,12 @@ Run-Check "CopyCheck" (@(Join-Path $root "AkaiS950Tests\CopyCheck.cs") + $list) 
 Run-Check "KeygroupCopyCheck" `
     (@(Join-Path $root "AkaiS950Tests\KeygroupCopyCheck.cs") + $list) (Join-Path $root "disks")
 
+# The velocity strip beside the keyboard, driven through its own mouse handlers. It needs
+# only the one control, which is why it is not carrying the whole editor with it.
+Run-Check "VelocityCheck" `
+    (@(Join-Path $root "AkaiS950Tests\VelocityCheck.cs") +
+     @(Join-Path $root "AkaiS950Studio\VelocitySlider.cs")) $null
+
 # The tree keeping its shape across a rebuild. Like StuckNoteCheck this drives the real
 # control rather than a copy of it, so it needs WinForms and the editor itself.
 Run-Check "TreeStateCheck" `

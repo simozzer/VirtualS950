@@ -29,6 +29,10 @@ namespace AkaiS950Studio
         readonly Label _kgHeader = new Label();
         readonly Panel _kgPanel = new Panel();
         readonly PianoKeyboard _piano = new PianoKeyboard();
+        readonly VelocitySlider _velocity = new VelocitySlider();
+
+        /// <summary>The keyboard and the velocity strip beside it, shown and hidden together.</summary>
+        Panel _keyRow;
         readonly WaveformView _wave = new WaveformView();
         readonly Label _waveHeader = new Label();
         readonly Panel _wavePanel = new Panel();
@@ -453,10 +457,24 @@ namespace AkaiS950Studio
             _keygroups.Columns.Add("Kg", 58);
             _keygroups.ShowItemToolTips = true;
 
-            _piano.Dock = DockStyle.Top;
-            _piano.Height = 92;
+            /*
+             * The keyboard and, on the right of the same row, how hard it strikes.
+             *
+             * Docking resolves from the last-added control backwards, so the one that
+             * fills goes in first and the strip on the edge after it.
+             */
+            _piano.Dock = DockStyle.Fill;
             _piano.KeyClicked += OnPianoKey;
             _piano.KeyReleased += OnPianoKeyUp;
+
+            _velocity.Dock = DockStyle.Right;
+            _velocity.ValueChanged += (s, e) =>
+                SetStatus("Keyboard velocity " + _velocity.Value +
+                          "  -  a softer strike closes the filter, a harder one opens it.");
+
+            _keyRow = new Panel { Dock = DockStyle.Top, Height = 92 };
+            _keyRow.Controls.Add(_piano);
+            _keyRow.Controls.Add(_velocity);
 
             // The list names the column it is in, level with the editor beside it.
             // Docking resolves from the last-added control backwards, so the header goes
@@ -500,7 +518,7 @@ namespace AkaiS950Studio
             // because a keygroup is a range of keys before it is anything else.
             var work = new Panel { Dock = DockStyle.Fill };
             work.Controls.Add(middle);
-            work.Controls.Add(_piano);
+            work.Controls.Add(_keyRow);
             work.Controls.Add(BuildFileHeader());
 
             _keygroups.SelectedIndexChanged += (s, e) => OnKeygroupSelected();
@@ -1252,7 +1270,8 @@ namespace AkaiS950Studio
         /// </summary>
         void ShowPanes(bool keygroups, bool waveform)
         {
-            _piano.Visible = keygroups;
+            // The velocity strip stands down with the keyboard it belongs to.
+            if (_keyRow != null) _keyRow.Visible = keygroups;
             _middleSplit.Panel1Collapsed = !keygroups;
             _outerSplit.Panel2Collapsed = !waveform;
         }
@@ -2786,7 +2805,7 @@ namespace AkaiS950Studio
                 if (EnsureInstrument())
                 {
                     _instrument.SetProgram(f.Disk, f.Entry);
-                    _instrument.NoteOn(note, 100);
+                    _instrument.NoteOn(note, _velocity.Value);
 
                     // What it is SOUNDING, not what the keygroup under the pointer says.
                     // Overlapping keygroups mean a key can sound more than one sample, and
