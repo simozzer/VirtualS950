@@ -316,7 +316,7 @@ namespace AkaiS950Synth
         }
 
         /// <summary>Scale to fill the 12 bits the machine stores, and round.</summary>
-        static short[] Quantise(double[] wave)
+        public static short[] Quantise(double[] wave)
         {
             double peak = 0;
             foreach (double v in wave) peak = Math.Max(peak, Math.Abs(v));

@@ -119,6 +119,15 @@ namespace AkaiS950Synth
 
         public bool OneShot;
 
+        /// <summary>
+        /// Play every keygroup at its sample's own pitch, whatever key is pressed.
+        ///
+        /// Flag bit 0. For a drum kit this is what stops a kick two keys up from being a
+        /// kick two semitones sharp - and it is belt and braces beside the root note,
+        /// since each drum's root is already the key it sits on.
+        /// </summary>
+        public bool ConstantPitch;
+
         /// <summary>Two or three letters naming the treatment, for a generated patch.</summary>
         public string Suffix;
 
@@ -161,6 +170,25 @@ namespace AkaiS950Synth
             public int Rate = 40000;
             public bool IsNoise;
             public Shake Shake;          // noise shaking the level, the pitch, or both
+
+            /// <summary>
+            /// A one-shot, rendered whole, instead of a table to loop.
+            ///
+            /// Everything else here is a few cycles played round and round with the
+            /// machine's envelope shaping them. A percussion sample cannot be that: its
+            /// envelope is the sound rather than a setting, so it is generated at full
+            /// length, written with loop mode O, and the loop fields are never read.
+            /// </summary>
+            public Func<short[]> Oneshot;
+
+            /// <summary>
+            /// The key it plays at its own rate on, where that is not middle C.
+            ///
+            /// Every tuned wave here is written at <see cref="RootNote"/> and transposed
+            /// from there. A drum is not transposed at all, so its root is the key it
+            /// sits on and the varispeed ratio is one.
+            /// </summary>
+            public int? Root;
         }
 
         // ------------------------------------------------------------------- helpers
@@ -371,7 +399,19 @@ namespace AkaiS950Synth
                                  "CZ BRASS", "FM STACK", "RING CLNG", "SPLIT FX",
                                  "VEL HIT"),
                     Cross (new[] { "PINK", "BROWN", "WHITE", "FM STACK", "PD ROCK" },
-                           "PD", "STB", "SWL"))
+                           "PD", "STB", "SWL")),
+
+                //
+                // The drums, which are a disk of their own for a reason the other five do
+                // not have: their samples are one-shots with the envelope baked in, and a
+                // kit is 600-odd KB where a wavetable is a few. Nothing else would fit
+                // beside them, and nothing else wants to - a kit is loaded as a kit.
+                //
+                // No generated programmes here. Those apply a treatment to a wave, and a
+                // treatment is an envelope and a filter, which is precisely what a drum
+                // does not take from the machine.
+                //
+                Disk ("DRUMS", Drums.Programmes(), new List<Patch>())
             };
         }
 
@@ -420,7 +460,7 @@ namespace AkaiS950Synth
 
         public static List<Wave> Waves()
         {
-            return new List<Wave>
+            var waves = new List<Wave>
             {
                 // ---- the plain shapes
                 Plain ("SAW",      Waveforms.Saw),
@@ -567,6 +607,11 @@ namespace AkaiS950Synth
 
                 new Wave { Name = "NOISE", IsNoise = true, Rate = 20000 }
             };
+
+            // The drum kit, which is generated a different way and says so - see Drums.
+            waves.AddRange(Drums.Waves());
+
+            return waves;
         }
 
         // ------------------------------------------------------------------- patches

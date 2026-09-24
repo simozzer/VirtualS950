@@ -8,7 +8,7 @@ namespace AkaiS950Synth
     /// <summary>
     /// Build S950 disks full of synthesiser sounds, from nothing.
     ///
-    ///     AkaiS950Synth [folder] [--img] [--list]
+    ///     AkaiS950Synth [folder] [--img] [--list] [--wav]
     ///
     /// No samples are recorded and none are read: every waveform is worked out from its
     /// harmonics, band-limited to what the sample rate can hold, and written straight into
@@ -27,12 +27,13 @@ namespace AkaiS950Synth
         static int Main(string[] args)
         {
             string folder = null;
-            bool listOnly = false, raw = false;
+            bool listOnly = false, raw = false, audition = false;
 
             foreach (var a in args)
             {
                 if (a == "--list") listOnly = true;
                 else if (a == "--img") raw = true;
+                else if (a == "--wav") audition = true;
                 else if (!a.StartsWith("--")) folder = a;
             }
 
@@ -42,6 +43,8 @@ namespace AkaiS950Synth
             try
             {
                 Directory.CreateDirectory(folder);
+
+                if (audition) { Audition(folder); return 0; }
 
                 foreach (var bank in Patches.Banks())
                     BuildBank(bank, folder, raw ? "img" : "hfe");
@@ -78,8 +81,23 @@ namespace AkaiS950Synth
                                    + (l.Hard != null
                                       ? " >" + l.Hard.At + "> " + l.Hard.Sample : ""));
 
-                    Console.WriteLine("    {0,-10} {1}", p.Name,
-                                      string.Join(" + ", layers.ToArray()));
+                    //
+                    // A synthesiser patch is a layer or three and fits on a line. A drum
+                    // kit is eighteen keygroups, and run together they are a wall of text
+                    // that nobody reads - which defeats the point of a listing whose whole
+                    // job is to be read before a disk is written.
+                    //
+                    const int PerLine = 4;
+
+                    for (int i = 0; i < layers.Count; i += PerLine)
+                    {
+                        var line = layers.GetRange(i, Math.Min(PerLine, layers.Count - i));
+
+                        Console.WriteLine("    {0,-10} {1}{2}",
+                                          i == 0 ? p.Name : "",
+                                          string.Join(" + ", line.ToArray()),
+                                          i + PerLine < layers.Count ? " +" : "");
+                    }
                 }
             }
 
@@ -135,6 +153,75 @@ namespace AkaiS950Synth
 
         // -------------------------------------------------------------------- building
 
+        // ------------------------------------------------------------------ auditioning
+
+        /// <summary>
+        /// Every one-shot as a WAV, to listen to.
+        ///
+        /// A disk image cannot be played, and a drum is judged by ear or not at all - no
+        /// checksum says a kick is thin or a hat is airy. The looped waves are left out:
+        /// they are eight cycles of a waveform and there is nothing to hear in one that
+        /// the machine's envelope is not going to decide.
+        ///
+        /// What comes out is the words the disk carries, shifted up four bits to fill
+        /// sixteen. It is not what the S950 sounds like - that adds the machine's own
+        /// reconstruction filter, and the plugin is where to hear THAT - but it is
+        /// exactly what is going in.
+        /// </summary>
+        static void Audition(string folder)
+        {
+            Console.WriteLine();
+
+            foreach (var w in Patches.Waves())
+            {
+                if (w.Oneshot == null) continue;
+
+                var words = w.Oneshot();
+                string path = Path.Combine(folder, w.Name.Replace(' ', '-').ToLowerInvariant() + ".wav");
+                WriteWav(path, words, w.Rate);
+
+                Console.WriteLine("    {0,-10} {1,6} words  {2,6} Hz   {3}",
+                                  w.Name, words.Length, w.Rate, path);
+            }
+
+            Console.WriteLine();
+        }
+
+        /// <summary>16-bit mono WAV. The 12-bit words are shifted up four, not rescaled.</summary>
+        static void WriteWav(string path, short[] words, int rate)
+        {
+            using (var f = new BinaryWriter(File.Create(path)))
+            {
+                int bytes = words.Length * 2;
+
+                f.Write(new[] { 'R', 'I', 'F', 'F' });
+                f.Write(36 + bytes);
+                f.Write(new[] { 'W', 'A', 'V', 'E' });
+                f.Write(new[] { 'f', 'm', 't', ' ' });
+                f.Write(16);
+                f.Write((short)1);
+                f.Write((short)1);
+                f.Write(rate);
+                f.Write(rate * 2);
+                f.Write((short)2);
+                f.Write((short)16);
+                f.Write(new[] { 'd', 'a', 't', 'a' });
+                f.Write(bytes);
+
+                foreach (short v in words) f.Write((short)(v * 16));
+            }
+        }
+
+        /// <summary>The words a wave is made of, whichever kind of wave it is.</summary>
+        static short[] Words(Patches.Wave w)
+        {
+            if (w.Oneshot != null) return w.Oneshot();
+            if (w.IsNoise) return Waveforms.Hiss(2000, 12345);
+
+            int highest = Waveforms.HighestHarmonic(w.Rate, Patches.RootHz);
+            return Waveforms.Render(w.Table(highest), w.Cycles, w.Rate, Patches.RootHz, w.Shake);
+        }
+
         static void BuildBank(Patches.Bank bank, string folder, string format)
         {
             var waves = WavesFor(bank);
@@ -155,17 +242,7 @@ namespace AkaiS950Synth
 
             foreach (var w in waves)
             {
-                short[] words;
-
-                if (w.IsNoise)
-                {
-                    words = Waveforms.Hiss(2000, 12345);
-                }
-                else
-                {
-                    int highest = Waveforms.HighestHarmonic(w.Rate, Patches.RootHz);
-                    words = Waveforms.Render(w.Table(highest), w.Cycles, w.Rate, Patches.RootHz, w.Shake);
-                }
+                short[] words = Words(w);
 
                 //
                 // Looped, and the loop is the whole sample. AddSample defaults the length to
@@ -173,10 +250,18 @@ namespace AkaiS950Synth
                 // explicitly - a loop over part of a wavetable would sweep through half of
                 // it and jump back.
                 //
-                var e = disk.AddSample(w.Name, words, w.Rate, Patches.RootNote, 0, 'L');
-                SetLoopLength(disk, e, words.Length);
+                // A one-shot takes none of that: it is played once, to the end, and the
+                // loop fields are never read.
+                //
+                bool once = w.Oneshot != null;
+                var e = disk.AddSample(w.Name, words, w.Rate,
+                                       w.Root.HasValue ? w.Root.Value : Patches.RootNote,
+                                       0, once ? 'O' : 'L');
+                if (!once) SetLoopLength(disk, e, words.Length);
 
-                Console.WriteLine("    wave  {0,-10} {1,6} words  {2,6} Hz", w.Name, words.Length, w.Rate);
+                Console.WriteLine("    wave  {0,-10} {1,6} words  {2,6} Hz{3}",
+                                  w.Name, words.Length, w.Rate,
+                                  once ? "   one-shot" : "");
             }
 
             foreach (var p in bank.Programmes)
@@ -368,8 +453,11 @@ namespace AkaiS950Synth
             // vibrato rather than all of them wobbling in lockstep, which is what the bit
             // was measured to do.
             //
+            // Constant pitch is bit 0: the sample plays at its own rate whatever key asks
+            // for it, which is what a drum kit wants and a tuned patch never does.
             int flags = 0x04;
             if (p.OneShot) flags |= 0x08;
+            if (p.ConstantPitch) flags |= 0x01;
             Set(disk, prog, index, 18, flags);
 
             Set(disk, prog, index, 23, Signed(layer.VcfAmount ?? p.VcfAmount));
