@@ -64,10 +64,14 @@ jobs:
       - name: Check the editor
         shell: pwsh
         run: |
-          # PatchCheck and AudioCheck skip themselves here: one wants a library of disk
-          # images, which is other people's audio and is not in this repository, and the
-          # other wants a sound card. What remains is the maths, the loop join, the
-          # aliasing and the voice bookkeeping.
+          # PatchCheck and AudioCheck skip themselves here: one wants the library of real
+          # Akai disks, which is other people's audio and is not in this repository, and
+          # the other wants a sound card.
+          #
+          # Everything else runs, including the four checks that read disks\. Those need
+          # well-formed disks rather than that library, so test.ps1 writes them with
+          # AkaiS950Synth when the folder is empty - which on a fresh clone it always is,
+          # since *.hfe is ignored. No step is needed here to prepare them.
           .\test.ps1
 
       # ------------------------------------------------------------------- the plugin

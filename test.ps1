@@ -25,6 +25,31 @@ $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if (-not (Test-Path $csc)) { $csc = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" }
 if (-not (Test-Path $csc)) { Write-Error "No .NET Framework 4.0 compiler found." }
 
+# ------------------------------------------------------------------ the fixtures
+#
+# Four of the checks below read `disks\` - WavCheck, CopyCheck, KeygroupCopyCheck and
+# TreeStateCheck - and each of them exits 1 rather than pass over an empty folder, which
+# is right: a check that quietly tests nothing is worse than one that fails.
+#
+# Those disks are not in the repository. `*.hfe` is ignored, because the library this was
+# developed against is other people's audio. What the checks actually need is not that
+# library but *some* pair of well-formed disks, and AkaiS950Synth writes exactly that out
+# of nothing - deterministically, so the six it produces here are byte for byte the six
+# any other machine gets.
+#
+# So they are made rather than committed, the same bargain as the icon and the installer's
+# sound library. Without this a fresh clone fails four checks for want of a fixture, which
+# is what it did in CI: the disks were only ever written later, for the installer.
+$disks = Join-Path $root "disks"
+$haveDisks = @(Get-ChildItem (Join-Path $disks "*.hfe") -ErrorAction SilentlyContinue).Count
+
+if ($haveDisks -lt 2) {
+    Write-Host ""
+    Write-Host "--- writing the disk library (none found in disks\) ---" -ForegroundColor Cyan
+    & (Join-Path $root "AkaiS950Synth\build.ps1") -To $disks
+    if ($LASTEXITCODE -ne 0) { Write-Error "could not write the disk library" }
+}
+
 $engine = Get-ChildItem (Join-Path $root "AkaiS950Engine\*.cs") | ForEach-Object { $_.FullName }
 $list   = Get-ChildItem (Join-Path $root "AkaiS950List\*.cs") |
           Where-Object { $_.Name -ne "Program.cs" } | ForEach-Object { $_.FullName }
