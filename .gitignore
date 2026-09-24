@@ -40,3 +40,11 @@ Icon/icon-128.png
 
 # Disk images written into the installer at packaging time by AkaiS950Synth.
 Installer/staging/
+
+# The SDK's build tree. build.ps1 drives csc directly and writes one exe, but the csproj
+# files are there for an IDE, and `dotnet build` puts its intermediates here.
+bin/
+obj/
+
+# vscode seetings
+.vscode/

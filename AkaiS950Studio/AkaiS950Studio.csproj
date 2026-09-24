@@ -9,15 +9,33 @@
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <!-- One loop in WasapiOut writes the render buffer through a float*. build.ps1
+         passes /unsafe for the same reason. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- WFO1000 wants [DesignerSerializationVisibility] on public properties of a control,
+         so that the forms designer knows what to write into a .Designer.cs. There is no
+         designer here and no .Designer.cs in the repo - every control is built in code -
+         so the properties it names are runtime properties and the diagnostic is noise. -->
+    <NoWarn>$(NoWarn);WFO1000</NoWarn>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);WFO1000</WarningsNotAsErrors>
   </PropertyGroup>
 
-  <!-- Share the decoder and filesystem code with the command-line tool. -->
+  <!-- The icon is an artefact, built from the SVGs beside it by Icon\build-icon.ps1.
+       A build without it is not worth failing over, so it is used only when it is there. -->
+  <PropertyGroup Condition="Exists('..\Icon\AkaiS950.ico')">
+    <ApplicationIcon>..\Icon\AkaiS950.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <!-- The synth engine and the decoder and filesystem code live in their own folders and
+       are shared with the command-line tool, but the whole program is one assembly - the
+       same set of files build.ps1 hands to csc. Globs rather than a list, so a new file in
+       either folder arrives here the way it arrives there.
+
+       Program.cs in the List project is the command-line tool's entry point, and two Mains
+       in one assembly is an error rather than a choice. -->
   <ItemGroup>
-    <Compile Include="..\AkaiS950List\Hfe.cs" Link="Core\Hfe.cs" />
-    <Compile Include="..\AkaiS950List\HfeWrite.cs" Link="Core\HfeWrite.cs" />
-    <Compile Include="..\AkaiS950List\AkaiDisk.cs" Link="Core\AkaiDisk.cs" />
-    <Compile Include="..\AkaiS950List\AkaiDiskEdit.cs" Link="Core\AkaiDiskEdit.cs" />
-    <Compile Include="..\AkaiS950List\AkaiLoop.cs" Link="Core\AkaiLoop.cs" />
+    <Compile Include="..\AkaiS950Engine\*.cs" Link="Engine\%(Filename)%(Extension)" />
+    <Compile Include="..\AkaiS950List\*.cs" Exclude="..\AkaiS950List\Program.cs" Link="Core\%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>
