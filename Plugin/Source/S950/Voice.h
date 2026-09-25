@@ -21,27 +21,11 @@ namespace s950
      */
     struct Trims
     {
-        /*
-         * A control below its own range means "as recorded" - leave the keygroup alone.
-         *
-         * The controls REPLACE what the programme says rather than shifting it, so there has
-         * to be a value that means "not touched", and it cannot be a musical one: nought is a
-         * closed filter and an instant attack, not an absence of opinion. Anything under the
-         * bottom of a control's range says nothing was asked for, and the plugin's parameters
-         * put their resting position exactly one step down there.
-         *
-         * This default is far below every range, so a Trims that nobody has filled in plays
-         * the disk untouched - which is what an uninitialised control should do.
-         */
-        static constexpr double AsRecorded = -1000.0;
-
-        double cutoff = AsRecorded, amount = AsRecorded;
-        double vcaAttack = AsRecorded, vcaDecay = AsRecorded,
-               vcaSustain = AsRecorded, vcaRelease = AsRecorded;
-        double vcfAttack = AsRecorded, vcfDecay = AsRecorded,
-               vcfSustain = AsRecorded, vcfRelease = AsRecorded;
-        double lfoRate = AsRecorded, lfoDepth = AsRecorded, lfoDelay = AsRecorded;
-        double velToFilter = AsRecorded, velToLoudness = AsRecorded;
+        double cutoff = 0.0, amount = 0.0;
+        double vcaAttack = 0.0, vcaDecay = 0.0, vcaSustain = 0.0, vcaRelease = 0.0;
+        double vcfAttack = 0.0, vcfDecay = 0.0, vcfSustain = 0.0, vcfRelease = 0.0;
+        double lfoRate = 0.0, lfoDepth = 0.0, lfoDelay = 0.0;
+        double velToFilter = 0.0, velToLoudness = 0.0;
     };
 
     /*
@@ -174,22 +158,9 @@ namespace s950
         void applyLfo();
 
         /// A stored 0..99 panel value with its trim added, back inside 0..99.
-        /*
-         * What a keygroup plays: the control if it has been moved, the disk if it has not.
-         *
-         * This replaced an offset - `clamp (stored + by, 0, 99)` - and the difference is the
-         * whole point. An offset moved every keygroup of a programme by the same amount and
-         * so kept the spread its author wrote across the keyboard; this flattens that spread
-         * to one value the moment a control is touched, which is what "replace across all
-         * keygroups" asks for.
-         *
-         * Untouched is still untouched. A control resting below its range leaves the
-         * keygroup's own value alone, so a programme plays as recorded until something is
-         * deliberately moved.
-         */
-        static double chosen (double stored, double knob, double lo = 0.0, double hi = 99.0)
+        static double trimmed (int stored, double by)
         {
-            return knob < lo ? cal::clamp (stored, lo, hi) : cal::clamp (knob, lo, hi);
+            return cal::clamp (stored + by, 0.0, 99.0);
         }
 
         /// A straight line in decibels from one gain to another.

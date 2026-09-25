@@ -29,32 +29,19 @@ second, so a disk edited and reordered since still returns what you meant.
 from a MIDI controller: gain, and fifteen trims that move every keygroup of the loaded
 programme together.
 
-A control **replaces** what the programme says, across every keygroup of it. What the knob
-reads is what each keygroup now is, not a distance from where it was.
-
-Every control therefore rests one step *below* its range, and that position reads **"as
-recorded"** — the disk, untouched. It has to be below the range rather than at zero, because
-zero is a real setting: a shut filter, an instant attack. So a freshly loaded programme plays
-exactly as written, every control reads "as recorded", and nothing changes until you move
-something. Double-click, or turn a control all the way down, to put it back.
-
-The price is worth knowing. These were offsets, and an offset shifted every keygroup by the
-same amount and so kept whatever spread the programme's author wrote across the keyboard —
-which matters here, because cutoff is uniform in only 74% of the library's programmes and 54%
-of its two-zone keygroups set the soft and hard sample filters apart. Replacing flattens that
-spread the moment a control is touched: both samples of a velocity-switched keygroup end up on
-the same filter, and so does every keygroup up the keyboard. In exchange the number under the
-knob is the number the machine would show you, which is what a player reaching for one control
-over a whole programme usually wants.
-
-Every range below is the panel's own, with "as recorded" one step under it.
+A trim is an *offset* from what the disk says, not a setting. It reads zero until you turn it
+and double-clicks back to zero, and zero means "play what is on the floppy". That matters
+because a programme carries its own cutoff and envelope per keygroup — often quite different
+ones across the keyboard — and an absolute control would flatten all of that the moment it was
+touched. An offset keeps the shape its author gave it and moves the whole of it, which is what
+"brighter" means on an instrument like this.
 
 | group | controls | CC | range |
 |---|---|---|---|
-| Sample | Filter | 74 | 0..99 |
-| VCF | Amnt | 70 | −50..+50 |
-| VCA envelope | Attack, Decay, Sustain, Release | 73, 75, 79, 72 | 0..99 |
-| VCF envelope | Attack, Decay, Sustain, Release | 102, 103, 104, 105 | 0..99 |
+| Sample | Filter | 74 | ±99 |
+| VCF | Amnt | 70 | ±50 |
+| VCA envelope | Attack, Decay, Sustain, Release | 73, 75, 79, 72 | ±99 |
+| VCF envelope | Attack, Decay, Sustain, Release | 102, 103, 104, 105 | ±99 |
 | LFO | Rate, Depth, Delay | 76, 77, 78 | 0..99 |
 | Velocity | Freq, Loudness | 109, 112 | 0..99 |
 
@@ -64,12 +51,15 @@ depth and delay, which is what this machine's LFO is. 102–105 and 109/112 are 
 numbers taken for the filter envelope and for velocity, which GM has no assignments for.
 
 The two envelopes are dragged as shapes rather than set as eight knobs: the corners are the
-stages, and the graph shows one representative keygroup — its own values where a control is
-still at rest, and the control's where it has been moved — so it is honest about what you will
-actually hear.
+stages, and the graph shows the result for one representative keygroup — the programme's own
+values with the trim added — so it is honest about what you will actually hear.
 
-Two behaviours worth knowing before they surprise you:
+Three behaviours worth knowing before they surprise you:
 
+- **The LFO and velocity knobs only add.** The filter and envelope trims go both ways because
+  a programme always has an envelope and always has a cutoff. Nearly every programme leaves
+  the LFO switched off, so a symmetric knob there would spend its whole lower half asking for
+  less than nothing and clamping at zero.
 - **Velocity → Loudness reaches the next note you play**, not one already sounding. It decides
   how much softer a soft note is, which is a question about the strike, and the strike is over.
   Velocity → Freq does reach a sounding note, because a filter control you cannot play with is

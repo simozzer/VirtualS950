@@ -44,17 +44,13 @@ namespace s950
          */
         struct AtomicTrims
         {
-            /// Not zero - zero is a closed filter and an instant attack. See Trims::AsRecorded.
-            static constexpr float Untouched = (float) Trims::AsRecorded;
-
-            std::atomic<float> cutoff { Untouched }, amount { Untouched };
-            std::atomic<float> vcaAttack { Untouched }, vcaDecay { Untouched },
-                               vcaSustain { Untouched }, vcaRelease { Untouched };
-            std::atomic<float> vcfAttack { Untouched }, vcfDecay { Untouched },
-                               vcfSustain { Untouched }, vcfRelease { Untouched };
-            std::atomic<float> lfoRate { Untouched }, lfoDepth { Untouched },
-                               lfoDelay { Untouched };
-            std::atomic<float> velToFilter { Untouched }, velToLoudness { Untouched };
+            std::atomic<float> cutoff { 0.0f }, amount { 0.0f };
+            std::atomic<float> vcaAttack { 0.0f }, vcaDecay { 0.0f },
+                               vcaSustain { 0.0f }, vcaRelease { 0.0f };
+            std::atomic<float> vcfAttack { 0.0f }, vcfDecay { 0.0f },
+                               vcfSustain { 0.0f }, vcfRelease { 0.0f };
+            std::atomic<float> lfoRate { 0.0f }, lfoDepth { 0.0f }, lfoDelay { 0.0f };
+            std::atomic<float> velToFilter { 0.0f }, velToLoudness { 0.0f };
 
             /// One reading of the lot, for a stretch of audio to be rendered against.
             Trims read() const

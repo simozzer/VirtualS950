@@ -33,7 +33,7 @@ namespace s950
          * changes how the NEXT note answers the keyboard, not how loud a note already
          * sounding turns out to have been.
          */
-        const double depth  = clamp01 (chosen (group.velToLoudness, trims.velToLoudness) / 99.0);
+        const double depth  = clamp01 (trimmed (group.velToLoudness, trims.velToLoudness) / 99.0);
         const double velDb  = -(127.0 - velocity) * cal::VelDbPerStep * depth;
         const double zoneDb = group.zoneLoudness * cal::LoudnessDbPerUnit;
 
@@ -126,12 +126,12 @@ namespace s950
      */
     void Voice::applyTrims()
     {
-        attack      = cal::vcaAttackSeconds (chosen (kg->vcaAttack, trims.vcaAttack));
-        decay       = cal::envSeconds (chosen (kg->vcaDecay,   trims.vcaDecay));
-        releaseTime = cal::envSeconds (chosen (kg->vcaRelease, trims.vcaRelease));
+        attack      = cal::vcaAttackSeconds (trimmed (kg->vcaAttack, trims.vcaAttack));
+        decay       = cal::envSeconds (trimmed (kg->vcaDecay,   trims.vcaDecay));
+        releaseTime = cal::envSeconds (trimmed (kg->vcaRelease, trims.vcaRelease));
 
         const double sustainDb =
-            -(1.0 - chosen (kg->vcaSustain, trims.vcaSustain) / 99.0) * cal::SustainDb;
+            -(1.0 - trimmed (kg->vcaSustain, trims.vcaSustain) / 99.0) * cal::SustainDb;
         sustain = peak * cal::dbToGain (sustainDb);
 
         /*
@@ -150,10 +150,13 @@ namespace s950
         const double baseSustain = kg->vcfWritten ? kg->vcfSustain : 99;
         const double baseRelease = kg->vcfWritten ? kg->vcfRelease : 0;
 
-        vcfAttack  = cal::envSeconds (chosen (baseAttack,  trims.vcfAttack))  * cal::VcfTimeScale;
-        vcfDecay   = cal::envSeconds (chosen (baseDecay,   trims.vcfDecay))   * cal::VcfTimeScale;
-        vcfSustain = chosen (baseSustain, trims.vcfSustain) / 99.0;
-        vcfRelease = cal::envSeconds (chosen (baseRelease, trims.vcfRelease)) * cal::VcfTimeScale;
+        vcfAttack  = cal::envSeconds (cal::clamp (baseAttack + trims.vcfAttack, 0.0, 99.0))
+                   * cal::VcfTimeScale;
+        vcfDecay   = cal::envSeconds (cal::clamp (baseDecay + trims.vcfDecay, 0.0, 99.0))
+                   * cal::VcfTimeScale;
+        vcfSustain = cal::clamp (baseSustain + trims.vcfSustain, 0.0, 99.0) / 99.0;
+        vcfRelease = cal::envSeconds (cal::clamp (baseRelease + trims.vcfRelease, 0.0, 99.0))
+                   * cal::VcfTimeScale;
 
         /*
          * How far velocity and the key have moved the cutoff, in octaves.
@@ -170,7 +173,7 @@ namespace s950
         const double track    = cal::clamp (kg->keyToFilter, 0, 99) / cal::KeyFull;
         const double keyShift = (note - cal::KeyPivot) / 12.0 * track;
         const double velShift = ((velocity - cal::VelPivot) / 127.0)
-                                * (chosen (kg->velToFilter, trims.velToFilter) / 99.0)
+                                * (trimmed (kg->velToFilter, trims.velToFilter) / 99.0)
                                 * cal::VelOctaves;
         cutoffShift = keyShift + velShift;
 
@@ -191,9 +194,9 @@ namespace s950
      */
     void Voice::applyLfo()
     {
-        const double rate  = chosen (kg->lfoRate,  trims.lfoRate);
-        const double depth = chosen (kg->lfoDepth, trims.lfoDepth);
-        const double delay = chosen (kg->lfoDelay, trims.lfoDelay);
+        const double rate  = cal::clamp (kg->lfoRate  + trims.lfoRate,  0.0, 99.0);
+        const double depth = cal::clamp (kg->lfoDepth + trims.lfoDepth, 0.0, 99.0);
+        const double delay = cal::clamp (kg->lfoDelay + trims.lfoDelay, 0.0, 99.0);
 
         lfoCents    = depth * cal::LfoDepthCentsPerUnit + wheelCents;
         lfoStep     = 2.0 * 3.14159265358979323846
@@ -351,20 +354,17 @@ namespace s950
                    : 0.0)
             : vcfEnvelopeHeld (vcfT);
 
-        const double base = cal::cutoffHz (chosen (kg->zoneFilter, trims.cutoff), leaveRate);
+        const double base = cal::cutoffHz (kg->zoneFilter + trims.cutoff, leaveRate);
 
         /*
          * A programme with no filter envelope of its own contributes no amount, so an
-         * untouched keygroup moves the cutoff by nothing at all - exactly as before these
+         * untrimmed keygroup moves the cutoff by nothing at all - exactly as before these
          * controls existed. Dial an amount in and it has the flat envelope above to apply it
          * to, which is a constant offset until a decay or a sustain is dialled in as well.
-         *
-         * The one control on this panel that is signed, so its range is -50..50 and the value
-         * meaning "as recorded" sits below -50 rather than below 0.
          */
         const double baseAmount = kg->vcfWritten ? kg->vcfAmount : 0;
         const double depth =
-            (chosen (baseAmount, trims.amount, -50.0, 50.0) / 50.0) * cal::EnvOctaves;
+            (cal::clamp (baseAmount + trims.amount, -50.0, 50.0) / 50.0) * cal::EnvOctaves;
 
         const double hz = base * std::pow (2.0, cutoffShift + env * depth);
         return hz > ceiling ? ceiling : (hz < floorHz ? floorHz : hz);

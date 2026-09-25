@@ -145,17 +145,11 @@ juce::RangedAudioParameter* EnvelopeEditor::parameterFor (const char* stage) con
 
 EnvelopeEditor::Shown EnvelopeEditor::shown() const
 {
-    /*
-     * What the keygroup will actually play: the control if it has been moved, the disk if
-     * not. A control resting below its range has not been moved - see Trims::AsRecorded.
-     */
     auto valueOf = [this] (const char* stage, int keygroupValue)
     {
         auto* p = parameterFor (stage);
-        if (p == nullptr) return (double) juce::jlimit (0, 99, keygroupValue);
-
-        const double knob = p->convertFrom0to1 (p->getValue());
-        return juce::jlimit (0.0, 99.0, knob < 0.0 ? (double) keygroupValue : knob);
+        const double trim = p != nullptr ? p->convertFrom0to1 (p->getValue()) : 0.0;
+        return juce::jlimit (0.0, 99.0, keygroupValue + trim);
     };
 
     return { valueOf ("Attack",  base.attack),
@@ -418,20 +412,12 @@ void EnvelopeEditor::mouseDoubleClick (const juce::MouseEvent& e)
     const auto corner = cornerAt (e.position);
     if (corner == none) return;
 
-    /*
-     * Back to "as recorded", which is the BOTTOM of the range and not zero.
-     *
-     * It was zero, and zero was right while these were offsets. Now that a control replaces
-     * the programme's value, zero is a real setting - an instant attack, a shut filter - and
-     * double-clicking a corner would have set that stage to nought across every keygroup
-     * rather than putting it back.
-     */
     auto zero = [this] (const char* stage)
     {
         if (auto* p = parameterFor (stage))
         {
             p->beginChangeGesture();
-            p->setValueNotifyingHost (0.0f);          // normalised: the resting position
+            p->setValueNotifyingHost (p->convertTo0to1 (0.0f));
             p->endChangeGesture();
         }
     };
@@ -443,17 +429,17 @@ void EnvelopeEditor::mouseDoubleClick (const juce::MouseEvent& e)
     repaint();
 }
 
-void EnvelopeEditor::trimTo (const char* stage, int, double value, bool)
+void EnvelopeEditor::trimTo (const char* stage, int keygroupValue, double value, bool)
 {
     auto* p = parameterFor (stage);
     if (p == nullptr) return;
 
-    // The control replaces rather than shifts, so what goes in is the value itself - the
-    // setting every keygroup of the programme will now play. The keygroup's own value is no
-    // longer part of the sum, which is why it is not read here.
-    const float wanted = (float) juce::jlimit (0.0, 99.0, value);
+    // The control is an offset, so what goes in is the distance from where the programme
+    // already is - and it cannot ask for more than the range allows.
+    const double wanted = juce::jlimit (0.0, 99.0, value);
+    const float  trim   = (float) juce::jlimit (-99.0, 99.0, wanted - keygroupValue);
 
-    p->setValueNotifyingHost (p->convertTo0to1 (wanted));
+    p->setValueNotifyingHost (p->convertTo0to1 (trim));
 }
 
 void EnvelopeEditor::timerCallback()
@@ -541,15 +527,19 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
 
         const juce::String tip =
             juce::String (w.group) + " " + w.name +
-            ", set across every keygroup in the programme - it replaces what the disk says "
-            "rather than shifting it. Turn it all the way down for \"as recorded\", which is "
-            "also where a double-click puts it. MIDI CC " + juce::String (w.cc) + "."
+            ", offset from what the disk says, across every keygroup in the programme. "
+            "Zero plays it as written. MIDI CC " + juce::String (w.cc) + "."
+            + (juce::String (w.group) == "LFO"
+                 ? juce::String (" Adds only: nearly every programme leaves the LFO switched"
+                                 " off, so below zero there is nothing to take away.")
+                 : juce::String())
             + (juce::String (w.group) == "VELOCITY"
-                 ? juce::String (" Loudness reaches the next note you play rather than one"
-                                 " already sounding, because how hard a key was struck is"
-                                 " settled when it goes down.")
+                 ? juce::String (" Adds only. Loudness reaches the next note you play rather"
+                                 " than one already sounding, because how hard a key was"
+                                 " struck is settled when it goes down.")
                  : juce::String());
 
+        k.slider->setDoubleClickReturnValue (true, 0.0);
         k.slider->setTooltip (tip);
         k.slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 46, 13);
         addAndMakeVisible (*k.slider);
@@ -562,11 +552,6 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
 
         k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
             processor.parameters, w.id, *k.slider);
-
-        // After the attachment, because that is what gives the slider its range - and "as
-        // recorded" is the bottom of it, which differs between a 0..99 control and the
-        // signed one. Asking for 0 would put a 0..99 control on a real setting of nought.
-        k.slider->setDoubleClickReturnValue (true, k.slider->getMinimum());
 
         knobs.push_back (std::move (k));
     }

@@ -8,25 +8,7 @@ assumption it says that too — those are the ones another afternoon with a reco
 
 ## Unreleased
 
-### The player's controls replace rather than shift
-
-They were offsets: the knob held a distance from what the disk said, and every keygroup of the
-programme moved by that same amount. Now each one is a setting, and moving it puts every
-keygroup of the programme on that value.
-
-Each control rests one step *below* its range, and that position reads **"as recorded"** — the
-disk, untouched. It cannot be zero, because zero is a real setting: a shut filter, an instant
-attack. So a freshly loaded programme still plays exactly as written and nothing changes until
-a control is moved. Double-click, or turn a control all the way down, to put it back.
-
-What this gives up is the spread a programme was written with. Cutoff is uniform in only 74%
-of the library's programmes, and 54% of its two-zone keygroups set the soft and hard sample
-filters apart; an offset preserved all of that and a setting cannot. Both samples of a
-velocity-switched keygroup now land on the same filter, and so does every keygroup up the
-keyboard. In exchange the number under the knob is the number the machine would show you.
-
-The LFO and velocity controls lose their "adds only" note, which only meant anything while
-the rest were offsets — every control now spans the panel's own range.
+Nothing yet.
 
 ## v0.3.0 — 2026-09-25
 

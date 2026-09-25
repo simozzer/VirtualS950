@@ -385,20 +385,15 @@ releasing before it takes one still held.</p>
 
 <h3>The player's controls</h3>
 
-<p>Fifteen of them, on top of whatever programme is loaded. Each one <strong>replaces</strong>
-what the disk says, across every keygroup of the programme at once. What the knob reads is
-what each keygroup now is.</p>
+<p>Fifteen of them, on top of whatever programme is loaded. Every one is an <em>offset</em>
+from what the disk says rather than a setting: it reads zero until you turn it, double-clicks
+back to zero, and zero means "play what is on the floppy".</p>
 
-<p>Every control rests one step <em>below</em> its range, and that position reads
-<strong>"as recorded"</strong> — the disk, untouched. It has to sit below the range rather
-than at zero, because zero is a real setting: a shut filter, an instant attack. So a freshly
-loaded programme plays exactly as written, every knob reads "as recorded", and nothing changes
-until you move something. Double-click a knob, or turn it all the way down, to put it back.</p>
-
-<p>One consequence to expect. A programme often sets a different cutoff or envelope for each
-keygroup up the keyboard, and a velocity-switched keygroup usually gives its soft and hard
-samples different filters. Touching a control flattens all of that to the one value you have
-dialled in. That is what "across every keygroup" means, and it is not a fault.</p>
+<p>That is not a detail. A programme carries its own cutoff and its own envelope for each
+keygroup, often quite different ones across the keyboard, and an absolute control would
+flatten all of that the moment you touched it. An offset keeps the shape its author gave the
+programme and moves the whole of it at once — which is what "brighter" means on an instrument
+like this.</p>
 
 <p>All fifteen are automatable by the host, and all fifteen answer a MIDI controller:</p>
 
@@ -419,13 +414,16 @@ no mapping at all. 102–105 and 109/112 are undefined numbers, taken for the fi
 and for velocity because GM has no assignments for those.</p>
 
 <p>The two envelopes are <strong>dragged as shapes</strong> rather than set as eight knobs.
-The corners are the stages, and the graph draws one representative keygroup — its own values
-where a control is still at rest, and the control's where you have moved it — so what you see
-is what that keygroup will sound like, not an abstract curve.</p>
+The corners are the stages, and the graph draws the result for one representative keygroup —
+the programme's own values with your trim added — so what you see is what that keygroup will
+sound like, not an abstract curve.</p>
 
-<p>Two things behave in ways worth knowing before they surprise you:</p>
+<p>Three things behave in ways worth knowing before they surprise you:</p>
 
 <ul>
+  <li><strong>The LFO and velocity knobs only add</strong>, 0 to 99, where the filter and
+      envelope trims go both ways. Nearly every programme leaves the LFO switched off, so a
+      knob that went negative would spend its whole lower half asking for less than nothing.</li>
   <li><strong>Velocity → Loudness reaches the next note you play</strong>, not one already
       sounding. It decides how much softer a soft note is, and how hard a key was struck is
       settled when the key goes down. Velocity → Freq <em>does</em> reach a sounding note.</li>
