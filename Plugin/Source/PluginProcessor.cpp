@@ -52,7 +52,7 @@ VirtualS950Processor::describeParameters()
      * "12.4179993" is no use to anyone. A slider attachment overwrites whatever the slider
      * itself was told, so the parameter is the only place this actually sticks.
      */
-    auto addTrim = [&layout] (const char* id, const char* name, float span)
+    auto addRange = [&layout] (const char* id, const char* name, float lo, float hi)
     {
         auto asOffset = [] (float v, int)
         {
@@ -62,9 +62,15 @@ VirtualS950Processor::describeParameters()
         layout.add (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { id, 1 },
             name,
-            juce::NormalisableRange<float> (-span, span, 0.0f),
+            juce::NormalisableRange<float> (lo, hi, 0.0f),
             0.0f,
             juce::AudioParameterFloatAttributes().withStringFromValueFunction (asOffset)));
+    };
+
+    /// Symmetric: an offset that can go either way from what the disk says.
+    auto addTrim = [&addRange] (const char* id, const char* name, float span)
+    {
+        addRange (id, name, -span, span);
     };
 
     /*
@@ -136,10 +142,26 @@ VirtualS950Processor::describeParameters()
      * Delay is a fade-in rather than a wait: at 0 the wobble is at full depth within a
      * twentieth of a second, and at 99 it climbs for seven and a half. Turning it up on a
      * held note does not restart anything, because the fade keeps its place.
+     *
+     * THESE THREE ONLY GO UP, 0 TO 99, WHERE THE OTHERS GO BOTH WAYS
+     *
+     * The envelope and filter trims are symmetric because a programme always has an envelope
+     * and always has a cutoff, so there is something to move in either direction. The LFO is
+     * different: almost every programme in the library leaves it switched off, at a rate of
+     * 0 and a depth of 0. A symmetric knob on those spends its whole lower half asking for
+     * less than nothing, and the result clamps at 0 and does not move - half a control doing
+     * nothing at all, which is exactly how it felt.
+     *
+     * So they run 0..99 and add. Zero still means "as the disk has it", every knob here still
+     * reads zero until it is touched, and a continuous controller now spreads its 128 steps
+     * across the useful range instead of half of them over a dead zone.
+     *
+     * What this gives up is turning DOWN a programme that already has vibrato dialled in.
+     * That is rare enough to be worth the trade, and reaching for it is a keygroup edit.
      */
-    addTrim ("lfoRate",  "LFO Rate",  99.0f);
-    addTrim ("lfoDepth", "LFO Depth", 99.0f);
-    addTrim ("lfoDelay", "LFO Delay", 99.0f);
+    addRange ("lfoRate",  "LFO Rate",  0.0f, 99.0f);
+    addRange ("lfoDepth", "LFO Depth", 0.0f, 99.0f);
+    addRange ("lfoDelay", "LFO Delay", 0.0f, 99.0f);
 
     return layout;
 }

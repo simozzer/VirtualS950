@@ -518,7 +518,11 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
         const juce::String tip =
             juce::String (w.group) + " " + w.name +
             ", offset from what the disk says, across every keygroup in the programme. "
-            "Zero plays it as written. MIDI CC " + juce::String (w.cc) + ".";
+            "Zero plays it as written. MIDI CC " + juce::String (w.cc) + "."
+            + (juce::String (w.group) == "LFO"
+                 ? juce::String (" Adds only: nearly every programme leaves the LFO switched"
+                                 " off, so below zero there is nothing to take away.")
+                 : juce::String());
 
         k.slider->setDoubleClickReturnValue (true, 0.0);
         k.slider->setTooltip (tip);
