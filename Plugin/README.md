@@ -25,9 +25,52 @@ that can never lose the sound it was made with. Move the image, rename it, or op
 on another machine — it still plays. The programme comes back by name first and by position
 second, so a disk edited and reordered since still returns what you meant.
 
-**Gain is the only parameter the host automates.** Everything else about the sound belongs
-to the disk, this being a sampler: the programme *is* the patch. To change one, edit the
-image in the Studio, save it, and load the saved image here.
+**The player's controls.** Sixteen parameters, all automatable by the host and all reachable
+from a MIDI controller: gain, and fifteen trims that move every keygroup of the loaded
+programme together.
+
+A trim is an *offset* from what the disk says, not a setting. It reads zero until you turn it
+and double-clicks back to zero, and zero means "play what is on the floppy". That matters
+because a programme carries its own cutoff and envelope per keygroup — often quite different
+ones across the keyboard — and an absolute control would flatten all of that the moment it was
+touched. An offset keeps the shape its author gave it and moves the whole of it, which is what
+"brighter" means on an instrument like this.
+
+| group | controls | CC | range |
+|---|---|---|---|
+| Sample | Filter | 74 | ±99 |
+| VCF | Amnt | 70 | ±50 |
+| VCA envelope | Attack, Decay, Sustain, Release | 73, 75, 79, 72 | ±99 |
+| VCF envelope | Attack, Decay, Sustain, Release | 102, 103, 104, 105 | ±99 |
+| LFO | Rate, Depth, Delay | 76, 77, 78 | 0..99 |
+| Velocity | Freq, Loudness | 109, 112 | 0..99 |
+
+72–79 are the General MIDI sound controllers, so a keyboard with knobs labelled *cutoff* and
+*attack* reaches the right ones with no mapping — including 76, 77 and 78 for vibrato rate,
+depth and delay, which is what this machine's LFO is. 102–105 and 109/112 are undefined
+numbers taken for the filter envelope and for velocity, which GM has no assignments for.
+
+The two envelopes are dragged as shapes rather than set as eight knobs: the corners are the
+stages, and the graph shows the result for one representative keygroup — the programme's own
+values with the trim added — so it is honest about what you will actually hear.
+
+Three behaviours worth knowing before they surprise you:
+
+- **The LFO and velocity knobs only add.** The filter and envelope trims go both ways because
+  a programme always has an envelope and always has a cutoff. Nearly every programme leaves
+  the LFO switched off, so a symmetric knob there would spend its whole lower half asking for
+  less than nothing and clamping at zero.
+- **Velocity → Loudness reaches the next note you play**, not one already sounding. It decides
+  how much softer a soft note is, which is a question about the strike, and the strike is over.
+  Velocity → Freq does reach a sounding note, because a filter control you cannot play with is
+  not a control.
+- **The VCA attack steps rather than slides.** On the hardware it is a counter — 5.4/n seconds
+  for whole n — so stored 70 and 75 give the same attack to four digits, as do 80 and 85, and
+  everything from 90 up saturates at 2.70 s. The knob is faithful to that, which does feel odd
+  under the mouse the first time.
+
+To change the programme itself rather than trim it, edit the image in the Studio, save it, and
+load the saved image here.
 
 Eight voices, as the machine had. A ninth note takes a voice that is already releasing
 before it takes one still held. The voice count in the window is there because it answers
@@ -48,6 +91,7 @@ checked on its own, long before a plugin will load.
 Source/S950/Cal.h        the measured constants, and the mappings from panel bytes
 Source/S950/Filter.h     6th-order Butterworth, three biquads
 Source/S950/Patch.h      Sound, KeygroupPatch, Patch — what a voice needs
+Source/S950/Disk.h/cpp   reading an .hfe or .img into a Patch
 Source/S950/Voice.h/cpp  one sounding note
 Source/S950/Engine.h/cpp eight voices, the event ring, the patch hand-off
 Tests/ConformanceCheck.cpp
@@ -56,7 +100,7 @@ Tests/Reference.h        GENERATED — what the C# computes, to be held to
 
 **It compiles, and it agrees with the C# exactly.** For one commit it was a transcription
 nobody had run, because the machine it was written on had no C++ compiler. The first build
-once Visual Studio arrived was clean at `/W4`, and the conformance check passes 141 of 141 —
+once Visual Studio arrived was clean at `/W4`, and the conformance check passes 289 of 289 —
 with the worst relative difference across the filter's 65 cutoff points at exactly 0.
 
 ## What it needs
@@ -106,9 +150,17 @@ cd Plugin
 
 It needs no JUCE and no audio device. It puts the same inputs through the port that
 `ReferenceDump` put through the C#, and insists on the same answers to nine decimal places —
-the filter's cutoff at 65 points, the envelope times at 35, the LFO's rate and delay fade,
-every measured constant, plus the filter's DC gain and stopband and the engine driven end to
-end through its event ring.
+the filter's cutoff at 65 points, the envelope times at 35, the VCA attack at all 100 of its
+settings, the LFO's rate and delay fade, every measured constant, plus the filter's DC gain
+and stopband and the engine driven end to end through its event ring.
+
+The attack gets all hundred rather than a ladder because it is a counter, and the interesting
+thing about a counter is *where it steps*: a port that interpolated smoothly between the same
+measured points would match every third value and be wrong in between. The check also holds
+the property rather than only the numbers — whole steps, never going backwards, saturating at
+5.4/2 — and does the same for the player's controls, which are tested by what they do to
+rendered audio rather than by reading a variable back. A control that moved a number without
+moving the sound would pass any test that asked the number.
 
 Regenerate `Reference.h` after any change to `Cal`, `Filter` or the envelopes on the C# side:
 
@@ -138,16 +190,26 @@ Two places where it could not stay identical, both in `Engine`:
 
 ## Still to do
 
-1. **Reading disks.** The plugin plays a placeholder sawtooth until it can open an image.
-   `AkaiS950List` is 2700 lines of byte manipulation with no dependencies; the plugin only
-   needs the reading half of it.
-2. **State.** A host saves the project and expects it back exactly. A file path breaks the
-   moment the library moves — but an S950 image is 800×1024 bytes, so the whole disk can go
-   in the plugin's state and there is never a missing file to hunt. Only the parameters are
-   saved today.
-3. An editor worth looking at. What is there now is a gain knob and a voice count, the
-   second of which answers the first question anyone asks of a silent plugin — is it getting
-   the notes? — without a debugger.
+The three things that were listed here — reading disks, saving the image into the project,
+and an editor worth looking at — are all done. What is left is measurement, not code:
+
+1. **`EnvOctaves` is probably 8.5 when it should be nearer 7.8.** Two independent readings
+   from the fifth calibration run say so: the static corners of a negative-amount clip, and
+   the travel of a full-depth release. Neither was the run's purpose, so neither is clean
+   enough to change a constant on.
+2. **`SustainDb` says a decay bottoms out 39.6 dB down, and the hardware falls at least 77.**
+   "At least" is as far as it goes: −77 dB is where the recording's noise floor sat. The
+   measurement at sustain 50 is unaffected and still right.
+3. **Velocity to attack and to release are not modelled at all.** Bytes 9 and 10 of a
+   keygroup, read off the disk and dropped on the floor. No keygroup in the six-disk library
+   sets either — 0 in all 181 — so nothing plays wrongly today, and there is nothing to
+   calibrate against either.
+4. **Nothing measures the VCA attack below stored 30.** That attack 0 is a hard gate is how
+   envelope generators are built rather than something this project has read off a machine,
+   and the shape between 2 and 30 is interpolation.
+5. **The filter attack may quantise like the VCA's** — 5.4/n for whole n — but it was
+   measured to about 5%, which is far too coarse to see 0.7% steps, so it keeps the shared
+   envelope curve. Not because it is smooth; because nobody has looked.
 
 ## Sample-accurate events
 

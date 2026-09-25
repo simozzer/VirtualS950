@@ -372,9 +372,7 @@ since edited and reordered still returns the programme you meant.</p>
 <h3>What the window shows</h3>
 
 <ul>
-  <li><strong>Gain</strong>, which is the only parameter the host automates. Everything else
-      about the sound belongs to the disk — this is a sampler, and the programme is the
-      patch.</li>
+  <li><strong>Gain</strong>, and <strong>fifteen player's controls</strong> — see below.</li>
   <li><strong>What is loaded</strong>: the disk, the programme, and for an
       <code>.hfe</code> read off a real floppy, how the recovery went.</li>
   <li><strong>Voices</strong>, counting what is sounding. It is there because it answers the
@@ -385,10 +383,61 @@ since edited and reordered still returns the programme you meant.</p>
 <p>Eight voices, as the machine had. A ninth note takes the voice of a note that is already
 releasing before it takes one still held.</p>
 
+<h3>The player's controls</h3>
+
+<p>Fifteen of them, on top of whatever programme is loaded. Every one is an <em>offset</em>
+from what the disk says rather than a setting: it reads zero until you turn it, double-clicks
+back to zero, and zero means "play what is on the floppy".</p>
+
+<p>That is not a detail. A programme carries its own cutoff and its own envelope for each
+keygroup, often quite different ones across the keyboard, and an absolute control would
+flatten all of that the moment you touched it. An offset keeps the shape its author gave the
+programme and moves the whole of it at once — which is what "brighter" means on an instrument
+like this.</p>
+
+<p>All fifteen are automatable by the host, and all fifteen answer a MIDI controller:</p>
+
+<table>
+  <tr><th>Sample</th><td>Filter</td><td>CC 74 · ±99</td></tr>
+  <tr><th>VCF</th><td>Amnt</td><td>CC 70 · ±50</td></tr>
+  <tr><th>VCA envelope</th><td>Attack, Decay, Sustain, Release</td>
+      <td>CC 73, 75, 79, 72 · ±99</td></tr>
+  <tr><th>VCF envelope</th><td>Attack, Decay, Sustain, Release</td>
+      <td>CC 102, 103, 104, 105 · ±99</td></tr>
+  <tr><th>LFO</th><td>Rate, Depth, Delay</td><td>CC 76, 77, 78 · 0–99</td></tr>
+  <tr><th>Velocity</th><td>Freq, Loudness</td><td>CC 109, 112 · 0–99</td></tr>
+</table>
+
+<p>72–79 are the General MIDI sound-controller numbers, so a keyboard with knobs already
+labelled <em>cutoff</em>, <em>attack</em> or <em>vibrato rate</em> reaches the right ones with
+no mapping at all. 102–105 and 109/112 are undefined numbers, taken for the filter envelope
+and for velocity because GM has no assignments for those.</p>
+
+<p>The two envelopes are <strong>dragged as shapes</strong> rather than set as eight knobs.
+The corners are the stages, and the graph draws the result for one representative keygroup —
+the programme's own values with your trim added — so what you see is what that keygroup will
+sound like, not an abstract curve.</p>
+
+<p>Three things behave in ways worth knowing before they surprise you:</p>
+
+<ul>
+  <li><strong>The LFO and velocity knobs only add</strong>, 0 to 99, where the filter and
+      envelope trims go both ways. Nearly every programme leaves the LFO switched off, so a
+      knob that went negative would spend its whole lower half asking for less than nothing.</li>
+  <li><strong>Velocity → Loudness reaches the next note you play</strong>, not one already
+      sounding. It decides how much softer a soft note is, and how hard a key was struck is
+      settled when the key goes down. Velocity → Freq <em>does</em> reach a sounding note.</li>
+  <li><strong>The VCA attack steps rather than slides.</strong> On the hardware it is a
+      counter, so stored 70 and 75 give exactly the same attack, as do 80 and 85, and
+      everything from 90 upwards is the same 2.70 seconds. The knob is faithful to that,
+      which feels odd under the mouse the first time and is not a fault.</li>
+</ul>
+
 <div class="note">
-<p><strong>To edit a disk, use the Studio.</strong> The plugin plays; it does not write. Edit
-the image here, save it, and load the saved image in the plugin — or keep the Studio open
-beside your DAW and reload after each save.</p>
+<p><strong>To change the programme itself, use the Studio.</strong> The controls above trim
+what is loaded; they do not write to the disk. Edit the image here, save it, and load the
+saved image in the plugin — or keep the Studio open beside your DAW and reload after each
+save.</p>
 </div>
 
 <h2>If something looks wrong</h2>

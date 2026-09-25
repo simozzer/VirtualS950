@@ -114,6 +114,11 @@ Source: "{#RepoRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoRoot}\README.md";        DestDir: "{app}"; Flags: ignoreversion isreadme
 Source: "{#RepoRoot}\Plugin\README.md"; DestDir: "{app}"; DestName: "README-plugin.md"; Flags: ignoreversion
 
+; What changed since the last version. Beside the READMEs rather than shown during setup:
+; somebody upgrading wants to find it afterwards, and nobody reads a wall of text standing
+; between them and an install.
+Source: "{#RepoRoot}\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
+
 ; The walk-through, which Help -> Tutorial opens from exactly here. Not attached to a
 ; component either: the plugin's section of it is as much use to somebody who installed
 ; only the plugin.

@@ -18,8 +18,12 @@ Gotek, play it from a MIDI keyboard, and use the plugin in a DAW. The editor ope
 **Help → Tutorial**, or <kbd>F1</kbd>, and the installer puts it in the program group.
 
 The plugin's half is also in [Plugin/README.md](Plugin/README.md#using-it) — how a disk is
-loaded, how programmes reach the host's own selector, and what a saved song remembers
-(all of it: the whole image rides in the project).
+loaded, how programmes reach the host's own selector, what a saved song remembers (all of it:
+the whole image rides in the project), and the fifteen player's controls with the MIDI
+controller numbers that reach them.
+
+[**CHANGELOG.md**](CHANGELOG.md) is what changed between releases, and is where the notes for
+a tag come from.
 
 ## The parts
 
