@@ -8,6 +8,10 @@ assumption it says that too — those are the ones another afternoon with a reco
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.3.0 — 2026-09-25
+
 ### The player's controls — new
 
 Fifteen controls that sit on top of whatever programme is loaded, where before there was only

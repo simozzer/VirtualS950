@@ -21,18 +21,41 @@ $repo = Split-Path -Parent $here
 
 function Say($text, $colour = "Gray") { Write-Host $text -ForegroundColor $colour }
 
+<#
+    Did a build step do what it promised?
+
+    Not "$LASTEXITCODE -ne 0" on its own, which is what this used to ask. That variable is
+    only ever set by a NATIVE command, and build-icon.ps1 ends on Write-Host - so in a shell
+    where nothing native has run yet it is still $null, and $null -ne 0 is TRUE. The release
+    build then stopped with "the icon did not build" immediately after printing the size of
+    the icon it had just built. It passed only when some earlier command happened to leave a
+    zero lying around, which is not a thing to rest a release on.
+
+    So: the exit code when there actually is one, and then the artefact, which is the part
+    that cannot be faked by a stale variable. $ErrorActionPreference is Stop, so anything
+    that throws inside the called script has already taken us out before this runs.
+#>
+function Built($path, $what) {
+    if (($null -ne $LASTEXITCODE) -and ($LASTEXITCODE -ne 0)) {
+        Write-Error "$what did not build - exit code $LASTEXITCODE"
+    }
+    if (-not (Test-Path $path)) {
+        Write-Error "$what did not build - nothing at $path"
+    }
+}
+
 # ------------------------------------------------------------------ build the two halves
 
 if (-not $SkipBuild -and -not $CheckOnly) {
     Say ""
     Say "  drawing the icon" "Cyan"
     & (Join-Path $repo "Icon\build-icon.ps1")
-    if ($LASTEXITCODE -ne 0) { Write-Error "the icon did not build" }
+    Built (Join-Path $repo "Icon\AkaiS950.ico") "the icon"
 
     Say ""
     Say "  building the editor" "Cyan"
     & (Join-Path $repo "build.ps1")
-    if ($LASTEXITCODE -ne 0) { Write-Error "the editor did not build" }
+    Built (Join-Path $repo "AkaiS950Studio.exe") "the editor"
 
     Say ""
     Say "  building the plugin" "Cyan"
@@ -76,7 +99,7 @@ Say ""
 Say "  writing the sound library" "Cyan"
 
 & (Join-Path $repo "AkaiS950Synth\build.ps1") -To $staging | Select-String -Pattern "->|zones sound"
-if ($LASTEXITCODE -ne 0) { Write-Error "the sound library did not build" }
+Built $staging "the sound library"
 
 $disks = Get-ChildItem (Join-Path $staging "*.hfe")
 if ($disks.Count -lt 1) { Write-Error "no disk images turned up in $staging" }

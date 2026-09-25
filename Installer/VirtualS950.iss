@@ -18,7 +18,7 @@
 ; does both and neither needs explaining.
 
 #define AppName        "VirtualS950"
-#define AppVersion     "0.2.0"
+#define AppVersion     "0.3.0"
 #define AppPublisher   "Simon Moscrop"
 #define AppCopyright   "Copyright (C) 2026 Simon Moscrop"
 #define AppURL         "https://github.com/simozzer/VirtualS950"

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(VirtualS950 VERSION 0.2.0 LANGUAGES C CXX)
+project(VirtualS950 VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,6 +50,11 @@ juce_add_plugin(VirtualS950
     PRODUCT_NAME                "VirtualS950"
     PLUGIN_MANUFACTURER_CODE    Smoz
     PLUGIN_CODE                 Ak95
+
+    # Explicitly, because JUCE does NOT inherit it from project(). Without this the VST3
+    # reported 0.1.0 - JUCE's own default - while the project said 0.3.0 and the installer
+    # said 0.3.0, so the one version a DAW actually shows the player was the wrong one.
+    VERSION                     "${PROJECT_VERSION}"
 
     ICON_BIG                    "${ICON_DIR}/icon-1024.png"
     ICON_SMALL                  "${ICON_DIR}/icon-128.png"
