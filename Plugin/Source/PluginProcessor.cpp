@@ -163,6 +163,22 @@ VirtualS950Processor::describeParameters()
     addRange ("lfoDepth", "LFO Depth", 0.0f, 99.0f);
     addRange ("lfoDelay", "LFO Delay", 0.0f, 99.0f);
 
+    /*
+     * How hard you play, and what it reaches: the filter's frequency and the loudness.
+     *
+     * 0..99 and adding, for the same reason as the LFO - these are depths, and a depth below
+     * zero is nothing. Across the six-disk library velocity reaches loudness in all 181
+     * keygroups and the filter in 95 of them, so unlike the LFO there usually IS something
+     * here already; the knob adds sensitivity to whatever the programme chose.
+     *
+     * Only these two. The machine's keygroup also carries velocity to attack (byte 9) and to
+     * release (byte 10), and nothing in the library sets either - 0 in all 181 - so no engine
+     * has ever modelled them and there is no measurement of what they would do. Controls for
+     * those would be controls over invented behaviour.
+     */
+    addRange ("velToFilter",   "Vel Freq",     0.0f, 99.0f);
+    addRange ("velToLoudness", "Vel Loudness", 0.0f, 99.0f);
+
     return layout;
 }
 
@@ -246,6 +262,11 @@ VirtualS950Processor::VirtualS950Processor()
     trimControls[10] = { 76, "lfoRate",  &AT::lfoRate  };
     trimControls[11] = { 77, "lfoDepth", &AT::lfoDepth };
     trimControls[12] = { 78, "lfoDelay", &AT::lfoDelay };
+
+    // 109 and 112 are undefined controllers, taken for velocity sensitivity - GM has no
+    // numbers for it, the same reason 102-105 were taken for the filter envelope.
+    trimControls[13] = { 109, "velToFilter",   &AT::velToFilter   };
+    trimControls[14] = { 112, "velToLoudness", &AT::velToLoudness };
 
     for (auto& t : trimControls)
     {

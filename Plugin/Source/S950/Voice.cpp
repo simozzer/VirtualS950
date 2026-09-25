@@ -25,7 +25,15 @@ namespace s950
 
         // --- amplitude envelope. Only the peak is fixed at the strike: it is what the
         // velocity and the zone trim decided, and no control moves it afterwards.
-        const double depth  = clamp01 (group.velToLoudness / 99.0);
+        /*
+         * The velocity-to-loudness trim lands here, at the strike, and nowhere else.
+         *
+         * It decides how much softer a soft note is, which is a question about the strike -
+         * so like the peak it sets, it is answered once and not revisited. Turning the knob
+         * changes how the NEXT note answers the keyboard, not how loud a note already
+         * sounding turns out to have been.
+         */
+        const double depth  = clamp01 (trimmed (group.velToLoudness, trims.velToLoudness) / 99.0);
         const double velDb  = -(127.0 - velocity) * cal::VelDbPerStep * depth;
         const double zoneDb = group.zoneLoudness * cal::LoudnessDbPerUnit;
 
@@ -46,12 +54,8 @@ namespace s950
         ceiling    = std::min (cal::MaxRatio * leaveRate, sampleRate * 0.45);
         floorHz    = std::min (cal::FloorHz, ceiling);
 
-        const double track    = cal::clamp (group.keyToFilter, 0, 99) / cal::KeyFull;
-        const double keyShift = (note - cal::KeyPivot) / 12.0 * track;
-        const double velShift = ((velocity - cal::VelPivot) / 127.0)
-                                * (cal::clamp (group.velToFilter, 0, 99) / 99.0)
-                                * cal::VelOctaves;
-        cutoffShift = keyShift + velShift;
+        // cutoffShift is worked out in applyTrims, which has already run, so that the
+        // velocity-to-filter trim can move it while the note sounds.
 
         vcfT          = 0.0;
         vcfReleasing  = false;
@@ -98,12 +102,8 @@ namespace s950
         ceiling    = std::min (cal::MaxRatio * leaveRate, sampleRate * 0.45);
         floorHz    = std::min (cal::FloorHz, ceiling);
 
-        const double track    = cal::clamp (group.keyToFilter, 0, 99) / cal::KeyFull;
-        const double keyShift = (note - cal::KeyPivot) / 12.0 * track;
-        const double velShift = ((velocity - cal::VelPivot) / 127.0)
-                                * (cal::clamp (group.velToFilter, 0, 99) / 99.0)
-                                * cal::VelOctaves;
-        cutoffShift = keyShift + velShift;
+        // cutoffShift is worked out in applyTrims, which has already run, so that the
+        // velocity-to-filter trim can move it while the note sounds.
 
         // deliberately no filter.reset() - see the note on adopt()
 
@@ -157,6 +157,25 @@ namespace s950
         vcfSustain = cal::clamp (baseSustain + trims.vcfSustain, 0.0, 99.0) / 99.0;
         vcfRelease = cal::envSeconds (cal::clamp (baseRelease + trims.vcfRelease, 0.0, 99.0))
                    * cal::VcfTimeScale;
+
+        /*
+         * How far velocity and the key have moved the cutoff, in octaves.
+         *
+         * Here rather than at the strike because the velocity-to-filter trim has to reach a
+         * note already sounding - a control that only took effect on the next key is not a
+         * control anyone can play with. The note and the velocity themselves cannot change,
+         * so what this recomputes each block is only how much of them counts.
+         *
+         * Key tracking is measured to pivot at note 62, not 60, and velocity at 65 - so a
+         * note played at exactly 65 is unmoved however much sensitivity is dialled in, and
+         * softer strikes go down where harder ones go up.
+         */
+        const double track    = cal::clamp (kg->keyToFilter, 0, 99) / cal::KeyFull;
+        const double keyShift = (note - cal::KeyPivot) / 12.0 * track;
+        const double velShift = ((velocity - cal::VelPivot) / 127.0)
+                                * (trimmed (kg->velToFilter, trims.velToFilter) / 99.0)
+                                * cal::VelOctaves;
+        cutoffShift = keyShift + velShift;
 
         applyLfo();
     }

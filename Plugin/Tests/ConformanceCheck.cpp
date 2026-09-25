@@ -981,6 +981,113 @@ namespace
                apart (faded, stillEarly), apart (fastEarly, stillEarly) * 0.5);
     }
 
+    // ------------------------------------------------------- the velocity sensitivities
+
+    /*
+     * How hard you play, and how much of that reaches the filter and the level.
+     *
+     * Both are depths on something the keygroup already sets, so both are read the same way:
+     * play the same programme at two velocities and see how far apart the results are, with
+     * the trim down and then up. A depth that works widens that gap.
+     *
+     * They differ in WHEN they take effect, and the test holds that too. The filter trim
+     * reaches a note already sounding, because a filter control you cannot play with is not
+     * a control; the loudness trim does not, because how hard a key was struck is settled
+     * when it goes down, and no knob reaches back to change it.
+     */
+    void checkVelocityTrims()
+    {
+        std::printf ("\n  the velocity sensitivities\n");
+
+        auto patch = []
+        {
+            auto p = std::make_shared<s950::Patch>();
+            s950::KeygroupPatch kg;
+            kg.lowKey = 0; kg.highKey = 127; kg.keygroupIndex = 0;
+            kg.sound      = makeSaw (48000, 48000);
+            kg.vcaAttack  = 0;
+            kg.vcaDecay   = 0;
+            kg.vcaSustain = 99;
+            kg.vcaRelease = 0;
+            kg.zoneFilter = 60;          // room to move either way
+            kg.velToFilter   = 0;
+            kg.velToLoudness = 0;
+            p->keygroups.push_back (kg);
+            return p;
+        }();
+
+        auto at = [&] (std::atomic<float> s950::Engine::AtomicTrims::* field,
+                       double trim, int velocity)
+        {
+            s950::Engine engine (48000.0);
+            engine.setPatch (patch);
+            (engine.trims.*field).store (static_cast<float> (trim));
+
+            std::vector<float> buffer (4800);
+            engine.noteOn (60, velocity);
+            engine.render (buffer.data(), 4800);
+            return rms (buffer);
+        };
+
+        using AT = s950::Engine::AtomicTrims;
+
+        // Loudness: with no depth a soft note is as loud as a hard one; with depth it is not.
+        const double flatSoft = at (&AT::velToLoudness,  0.0,  20);
+        const double flatHard = at (&AT::velToLoudness,  0.0, 127);
+        const double deepSoft = at (&AT::velToLoudness, 99.0,  20);
+        const double deepHard = at (&AT::velToLoudness, 99.0, 127);
+
+        same ("no loudness depth makes velocity irrelevant", flatSoft, flatHard, 1e-9);
+        check (deepSoft < deepHard * 0.5,
+               "a loudness depth makes a soft note softer", deepSoft, deepHard * 0.5);
+
+        /*
+         * Filter: measured through the level of a sawtooth after filtering, which falls as
+         * the cutoff closes. Velocity 20 is well below the measured pivot of 65, so depth
+         * takes the cutoff DOWN there, where at 127 it takes it up.
+         */
+        const double dullSoft = at (&AT::velToFilter, 99.0,  20);
+        const double brightHard = at (&AT::velToFilter, 99.0, 127);
+        check (dullSoft < brightHard * 0.9,
+               "a filter depth makes a soft note darker", dullSoft, brightHard * 0.9);
+
+        same ("no filter depth makes velocity irrelevant",
+              at (&AT::velToFilter, 0.0, 20), at (&AT::velToFilter, 0.0, 127), 1e-9);
+
+        /*
+         * And the difference in when they land. The same note is started untrimmed, then the
+         * trim is turned up under it: the filter follows, the loudness does not.
+         */
+        auto turnedUpMidNote = [&] (std::atomic<float> s950::Engine::AtomicTrims::* field)
+        {
+            s950::Engine engine (48000.0);
+            engine.setPatch (patch);
+
+            std::vector<float> before (2400), after (2400);
+            engine.noteOn (60, 20);
+            engine.render (before.data(), 2400);
+            if (field != nullptr) (engine.trims.*field).store (99.0f);
+            engine.render (after.data(), 2400);
+
+            return rms (before) > 0.0 ? rms (after) / rms (before) : 0.0;
+        };
+
+        /*
+         * Against a run where nothing is touched, not against 1.
+         *
+         * The second half of a note is not the same stretch of sawtooth as the first, so
+         * even with no control moved the two halves differ slightly in level - here by a
+         * quarter of a per cent. Asking for exactly 1 was asking the sample to repeat.
+         */
+        const double untouched     = turnedUpMidNote (nullptr);
+        const double filterMoved   = turnedUpMidNote (&AT::velToFilter);
+        const double loudnessMoved = turnedUpMidNote (&AT::velToLoudness);
+
+        check (std::abs (filterMoved - untouched) > 0.1,
+               "the filter depth reaches a note already sounding", filterMoved, untouched);
+        same ("the loudness depth waits for the next note", loudnessMoved, untouched, 1e-9);
+    }
+
     /*
      * The filter envelope runs on its own clock.
      *
@@ -1041,6 +1148,7 @@ int main()
     checkTrims();
     checkEnvelopeTrims();
     checkLfoTrims();
+    checkVelocityTrims();
     checkFilterClock();
 
     std::printf ("\n  %d checks, %d failed\n\n", checks, failures);

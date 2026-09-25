@@ -25,6 +25,7 @@ namespace s950
         double vcaAttack = 0.0, vcaDecay = 0.0, vcaSustain = 0.0, vcaRelease = 0.0;
         double vcfAttack = 0.0, vcfDecay = 0.0, vcfSustain = 0.0, vcfRelease = 0.0;
         double lfoRate = 0.0, lfoDepth = 0.0, lfoDelay = 0.0;
+        double velToFilter = 0.0, velToLoudness = 0.0;
     };
 
     /*

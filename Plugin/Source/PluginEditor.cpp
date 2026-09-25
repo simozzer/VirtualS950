@@ -505,6 +505,16 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
         { "lfoRate",    "Rate",    "LFO",    76 },
         { "lfoDepth",   "Depth",   "LFO",    77 },
         { "lfoDelay",   "Delay",   "LFO",    78 },
+
+        /*
+         * How hard you play, and what it reaches.
+         *
+         * Two, not four. The keygroup also carries velocity to attack and to release, but
+         * nothing in the library sets either and no engine models them, so knobs for those
+         * would be knobs over invented behaviour.
+         */
+        { "velToFilter",   "Freq",     "VELOCITY", 109 },
+        { "velToLoudness", "Loudness", "VELOCITY", 112 },
     };
 
     for (const auto& w : wanted)
@@ -522,6 +532,11 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
             + (juce::String (w.group) == "LFO"
                  ? juce::String (" Adds only: nearly every programme leaves the LFO switched"
                                  " off, so below zero there is nothing to take away.")
+                 : juce::String())
+            + (juce::String (w.group) == "VELOCITY"
+                 ? juce::String (" Adds only. Loudness reaches the next note you play rather"
+                                 " than one already sounding, because how hard a key was"
+                                 " struck is settled when it goes down.")
                  : juce::String());
 
         k.slider->setDoubleClickReturnValue (true, 0.0);
@@ -541,7 +556,8 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
         knobs.push_back (std::move (k));
     }
 
-    for (auto* h : { &vcaHeading, &vcfHeading, &sampleHeading, &lfoHeading })
+    for (auto* h : { &vcaHeading, &vcfHeading, &sampleHeading, &lfoHeading,
+                     &velocityHeading })
     {
         h->setJustificationType (juce::Justification::centredLeft);
         h->setColour (juce::Label::textColourId, juce::Colours::grey);
@@ -561,6 +577,7 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
     // This one does need a heading: three knobs called Rate, Depth and Delay could belong to
     // half a dozen things, and the machine calls it the LFO.
     lfoHeading.setText ("LFO", juce::dontSendNotification);
+    velocityHeading.setText ("VELOCITY", juce::dontSendNotification);
 
     vcaEnvelope.setTooltip ("The amplitude envelope, across every keygroup in the programme. "
                             "Drag the corners; double-click one to put that stage back to what "
@@ -890,8 +907,19 @@ void VirtualS950Editor::resized()
      * envelope then moves away from - and beside the graph it read as though it were. The
      * space to its right is deliberate: this is where the rest of the per-sample controls go.
      */
+    /*
+     * The LFO and the velocity controls share one strip, side by side.
+     *
+     * Three knobs and two do not fill a row each, and stacking them would have cost another
+     * 120 px of window for 430 px of knobs. Side by side they read as the two groups they
+     * are - what the instrument does on its own, and what it does in answer to how you play.
+     */
     r.removeFromBottom (14);
-    auto lfo = r.removeFromBottom (108);
+    auto performance = r.removeFromBottom (108);
+    auto lfo         = performance.removeFromLeft (3 * 86);
+    performance.removeFromLeft (24);
+    auto velocity    = performance;
+
     r.removeFromBottom (12);
     auto samples = r.removeFromBottom (108);
 
@@ -917,8 +945,9 @@ void VirtualS950Editor::resized()
         }
     };
 
-    placeRow (samples, sampleHeading, "SAMPLE");
-    placeRow (lfo,     lfoHeading,    "LFO");
+    placeRow (samples,  sampleHeading,   "SAMPLE");
+    placeRow (lfo,      lfoHeading,      "LFO");
+    placeRow (velocity, velocityHeading, "VELOCITY");
 
     r.removeFromTop (10);
     patchLabel.setBounds (r.removeFromTop (24));
