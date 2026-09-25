@@ -60,16 +60,13 @@ namespace s950
         filter.reset();
         filter.setCutoff (cutoffNow(), sampleRate);
 
-        // --- the LFO
-        const double own = group.lfoDepth * cal::LfoDepthCentsPerUnit;
-        wheelCents  = wheel;
-        lfoCents    = own + wheel;
-        ownLfo      = group.lfoDesync;
-        lfoPhase    = 0.0;
-        lfoStep     = 2.0 * 3.14159265358979323846
-                      * (cal::LfoRateHzAtZero + group.lfoRate * cal::LfoRateHzPerUnit) / sampleRate;
-        fadeSeconds = cal::LfoDelayFadeConstant / std::max (1, 100 - group.lfoDelay);
-        fadeT       = 0.0;
+        // --- the LFO. Phase and fade start here; rate, depth and delay come from applyLfo,
+        // which the trims can move while the note sounds.
+        wheelCents = wheel;
+        ownLfo     = group.lfoDesync;
+        lfoPhase   = 0.0;
+        fadeT      = 0.0;
+        applyLfo();
     }
 
     void Voice::adopt (const KeygroupPatch& group)
@@ -111,11 +108,8 @@ namespace s950
         // deliberately no filter.reset() - see the note on adopt()
 
         // --- the LFO keeps its phase and its place in the fade-in
-        lfoCents    = group.lfoDepth * cal::LfoDepthCentsPerUnit + wheelCents;
-        ownLfo      = group.lfoDesync;
-        lfoStep     = 2.0 * 3.14159265358979323846
-                      * (cal::LfoRateHzAtZero + group.lfoRate * cal::LfoRateHzPerUnit) / sampleRate;
-        fadeSeconds = cal::LfoDelayFadeConstant / std::max (1, 100 - group.lfoDelay);
+        ownLfo = group.lfoDesync;
+        applyLfo();
     }
 
     /*
@@ -163,6 +157,32 @@ namespace s950
         vcfSustain = cal::clamp (baseSustain + trims.vcfSustain, 0.0, 99.0) / 99.0;
         vcfRelease = cal::envSeconds (cal::clamp (baseRelease + trims.vcfRelease, 0.0, 99.0))
                    * cal::VcfTimeScale;
+
+        applyLfo();
+    }
+
+    /*
+     * Rate, depth and delay, from the keygroup and the player's trims together.
+     *
+     * Moving any of them under a sounding note is safe and is the point: the phase carries on
+     * from where it was, so a rate change bends the wobble rather than restarting it, and the
+     * fade keeps its place, so reaching for the delay does not re-trigger a fade-in that has
+     * already finished.
+     *
+     * The depth the trim moves is the keygroup's own. Whatever the mod wheel is asking for is
+     * added on top and is not trimmed - the wheel is the player's hand already, and putting a
+     * second control on it would only fight the first.
+     */
+    void Voice::applyLfo()
+    {
+        const double rate  = cal::clamp (kg->lfoRate  + trims.lfoRate,  0.0, 99.0);
+        const double depth = cal::clamp (kg->lfoDepth + trims.lfoDepth, 0.0, 99.0);
+        const double delay = cal::clamp (kg->lfoDelay + trims.lfoDelay, 0.0, 99.0);
+
+        lfoCents    = depth * cal::LfoDepthCentsPerUnit + wheelCents;
+        lfoStep     = 2.0 * 3.14159265358979323846
+                      * (cal::LfoRateHzAtZero + rate * cal::LfoRateHzPerUnit) / sampleRate;
+        fadeSeconds = cal::LfoDelayFadeConstant / std::max (1.0, 100.0 - delay);
     }
 
     void Voice::release()

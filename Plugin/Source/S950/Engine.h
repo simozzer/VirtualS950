@@ -49,6 +49,7 @@ namespace s950
                                vcaSustain { 0.0f }, vcaRelease { 0.0f };
             std::atomic<float> vcfAttack { 0.0f }, vcfDecay { 0.0f },
                                vcfSustain { 0.0f }, vcfRelease { 0.0f };
+            std::atomic<float> lfoRate { 0.0f }, lfoDepth { 0.0f }, lfoDelay { 0.0f };
 
             /// One reading of the lot, for a stretch of audio to be rendered against.
             Trims read() const
@@ -64,6 +65,9 @@ namespace s950
                 t.vcfDecay   = vcfDecay.load (std::memory_order_relaxed);
                 t.vcfSustain = vcfSustain.load (std::memory_order_relaxed);
                 t.vcfRelease = vcfRelease.load (std::memory_order_relaxed);
+                t.lfoRate    = lfoRate.load (std::memory_order_relaxed);
+                t.lfoDepth   = lfoDepth.load (std::memory_order_relaxed);
+                t.lfoDelay   = lfoDelay.load (std::memory_order_relaxed);
                 return t;
             }
         };

@@ -493,6 +493,18 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
          */
         { "vcfCutoff",  "Filter",  "SAMPLE", 74 },
         { "vcfAmount",  "Amnt",    "VCF",    70 },
+
+        /*
+         * The LFO, in its own row.
+         *
+         * Three knobs rather than a shape, because there is no shape to draw: it is a sine
+         * at a rate, at a depth, fading in over a delay. Rate is linear in hertz where every
+         * other time on this panel is exponential, so the knob deliberately feels different
+         * under the hand - a unit is 0.089 Hz wherever you are on it.
+         */
+        { "lfoRate",    "Rate",    "LFO",    76 },
+        { "lfoDepth",   "Depth",   "LFO",    77 },
+        { "lfoDelay",   "Delay",   "LFO",    78 },
     };
 
     for (const auto& w : wanted)
@@ -525,7 +537,7 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
         knobs.push_back (std::move (k));
     }
 
-    for (auto* h : { &vcaHeading, &vcfHeading, &sampleHeading })
+    for (auto* h : { &vcaHeading, &vcfHeading, &sampleHeading, &lfoHeading })
     {
         h->setJustificationType (juce::Justification::centredLeft);
         h->setColour (juce::Label::textColourId, juce::Colours::grey);
@@ -541,6 +553,10 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
     // deleted so the row keeps its spacing, and so there is somewhere to put a heading if
     // this row ever holds enough controls to need one.
     sampleHeading.setText ("", juce::dontSendNotification);
+
+    // This one does need a heading: three knobs called Rate, Depth and Delay could belong to
+    // half a dozen things, and the machine calls it the LFO.
+    lfoHeading.setText ("LFO", juce::dontSendNotification);
 
     vcaEnvelope.setTooltip ("The amplitude envelope, across every keygroup in the programme. "
                             "Drag the corners; double-click one to put that stage back to what "
@@ -578,7 +594,9 @@ VirtualS950Editor::VirtualS950Editor (VirtualS950Processor& p)
 
     // Big enough to hold the file browser, which opens inside this window rather than as a
     // dialog of its own - see openDisk.
-    setSize (720, 720);
+    // 120 taller than it was, for the LFO row: 108 for the knobs and 12 to stand them off
+    // the row above.
+    setSize (720, 840);
     startTimerHz (10);
 }
 
@@ -869,20 +887,34 @@ void VirtualS950Editor::resized()
      * space to its right is deliberate: this is where the rest of the per-sample controls go.
      */
     r.removeFromBottom (14);
+    auto lfo = r.removeFromBottom (108);
+    r.removeFromBottom (12);
     auto samples = r.removeFromBottom (108);
 
-    sampleHeading.setBounds (samples.removeFromTop (16));
-    samples.removeFromTop (4);
-
-    for (auto& k : knobs)
+    /*
+     * A row of knobs under a heading, laid out left to right.
+     *
+     * Both rows do the same thing and neither fills its width, which is deliberate: they are
+     * where the rest of the per-sample and per-LFO controls will go.
+     */
+    auto placeRow = [this] (juce::Rectangle<int> area, juce::Label& heading, const char* group)
     {
-        if (juce::String (k.group) != "SAMPLE") continue;
+        heading.setBounds (area.removeFromTop (16));
+        area.removeFromTop (4);
 
-        auto cell = samples.removeFromLeft (78);
-        k.label->setBounds (cell.removeFromBottom (13));
-        k.slider->setBounds (cell.reduced (1));
-        samples.removeFromLeft (8);
-    }
+        for (auto& k : knobs)
+        {
+            if (juce::String (k.group) != group) continue;
+
+            auto cell = area.removeFromLeft (78);
+            k.label->setBounds (cell.removeFromBottom (13));
+            k.slider->setBounds (cell.reduced (1));
+            area.removeFromLeft (8);
+        }
+    };
+
+    placeRow (samples, sampleHeading, "SAMPLE");
+    placeRow (lfo,     lfoHeading,    "LFO");
 
     r.removeFromTop (10);
     patchLabel.setBounds (r.removeFromTop (24));

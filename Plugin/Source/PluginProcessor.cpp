@@ -122,6 +122,25 @@ VirtualS950Processor::describeParameters()
     addTrim ("vcfSustain", "VCF Sustain", 99.0f);
     addTrim ("vcfRelease", "VCF Release", 99.0f);
 
+    /*
+     * The LFO, in the same 0..99 the panel uses, and as offsets like everything else here.
+     *
+     * Unlike the filter and the envelopes, the LFO on this machine is genuinely per-keygroup
+     * and programmes do vary it across the keyboard - so an offset is doing real work rather
+     * than standing in for an absolute control.
+     *
+     * Rate is linear in hertz, not exponential: 1.79 Hz at zero and about 0.089 Hz a unit,
+     * measured on eight rungs with an r2 of 0.99998. That makes the knob feel unlike an
+     * envelope knob, and it should - a unit is a fixed number of hertz wherever you are.
+     *
+     * Delay is a fade-in rather than a wait: at 0 the wobble is at full depth within a
+     * twentieth of a second, and at 99 it climbs for seven and a half. Turning it up on a
+     * held note does not restart anything, because the fade keeps its place.
+     */
+    addTrim ("lfoRate",  "LFO Rate",  99.0f);
+    addTrim ("lfoDepth", "LFO Depth", 99.0f);
+    addTrim ("lfoDelay", "LFO Delay", 99.0f);
+
     return layout;
 }
 
@@ -199,6 +218,12 @@ VirtualS950Processor::VirtualS950Processor()
     trimControls[7] = { 103, "vcfDecay",   &AT::vcfDecay   };
     trimControls[8] = { 104, "vcfSustain", &AT::vcfSustain };
     trimControls[9] = { 105, "vcfRelease", &AT::vcfRelease };
+
+    // 76, 77 and 78 are the General MIDI sound controllers for vibrato rate, depth and
+    // delay, which is exactly what these are.
+    trimControls[10] = { 76, "lfoRate",  &AT::lfoRate  };
+    trimControls[11] = { 77, "lfoDepth", &AT::lfoDepth };
+    trimControls[12] = { 78, "lfoDelay", &AT::lfoDelay };
 
     for (auto& t : trimControls)
     {

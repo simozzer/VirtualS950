@@ -24,6 +24,7 @@ namespace s950
         double cutoff = 0.0, amount = 0.0;
         double vcaAttack = 0.0, vcaDecay = 0.0, vcaSustain = 0.0, vcaRelease = 0.0;
         double vcfAttack = 0.0, vcfDecay = 0.0, vcfSustain = 0.0, vcfRelease = 0.0;
+        double lfoRate = 0.0, lfoDepth = 0.0, lfoDelay = 0.0;
     };
 
     /*
@@ -145,6 +146,15 @@ namespace s950
          * a value only read at note-on would be a setting.
          */
         void applyTrims();
+
+        /*
+         * The three LFO values the trims can move, derived from the keygroup and the trims.
+         *
+         * Separate from applyTrims only because the note's own LFO state - its phase, and how
+         * far into the fade it is - is set once at the strike and must survive every later
+         * call, while these three are recomputed from scratch each control block.
+         */
+        void applyLfo();
 
         /// A stored 0..99 panel value with its trim added, back inside 0..99.
         static double trimmed (int stored, double by)

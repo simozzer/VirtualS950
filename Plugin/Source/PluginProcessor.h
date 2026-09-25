@@ -210,8 +210,9 @@ private:
      *
      * The controller numbers are the General MIDI sound-controller assignments, so a
      * keyboard with knobs labelled "cutoff" and "attack" reaches the right ones with no
-     * mapping: 72-79 are the standard set, and 102-105 are undefined ones taken for the
-     * filter envelope, which GM has no numbers for.
+     * mapping: 72-79 are the standard set - including 76, 77 and 78 for vibrato rate, depth
+     * and delay, which is what this machine's LFO is - and 102-105 are undefined ones taken
+     * for the filter envelope, which GM has no numbers for.
      */
     struct TrimControl
     {
@@ -226,7 +227,7 @@ private:
         juce::RangedAudioParameter* control = nullptr;
     };
 
-    static constexpr int NumTrims = 10;
+    static constexpr int NumTrims = 13;
     TrimControl trimControls[NumTrims];
 
     /*

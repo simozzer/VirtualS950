@@ -170,7 +170,7 @@ private:
     EnvelopeEditor vcaEnvelope { processor, false };
     EnvelopeEditor vcfEnvelope { processor, true  };
 
-    juce::Label  vcaHeading, vcfHeading, sampleHeading;
+    juce::Label  vcaHeading, vcfHeading, sampleHeading, lfoHeading;
     juce::Label  patchLabel;
     juce::Label  voicesLabel;
 

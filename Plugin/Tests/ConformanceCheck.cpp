@@ -891,6 +891,96 @@ namespace
         }
     }
 
+    // ----------------------------------------------------------------- the LFO trims
+
+    /*
+     * Rate, depth and delay, checked by what they do to the audio.
+     *
+     * The LFO bends pitch, and pitch is awkward to assert directly - so each is read as how
+     * far the rendered note has been pushed away from the same note with the LFO still. That
+     * distance is zero when nothing is asked for, grows with depth, and - this is what makes
+     * rate and delay separable - arrives at a different TIME for each of them.
+     */
+    void checkLfoTrims()
+    {
+        std::printf ("\n  the LFO trims\n");
+
+        auto patch = []
+        {
+            auto p = std::make_shared<s950::Patch>();
+            s950::KeygroupPatch kg;
+            kg.lowKey = 0; kg.highKey = 127; kg.keygroupIndex = 0;
+            kg.sound      = makeSaw (48000, 48000);
+            kg.vcaAttack  = 0;
+            kg.vcaDecay   = 0;
+            kg.vcaSustain = 99;
+            kg.vcaRelease = 0;
+            kg.zoneFilter = 99;
+            kg.lfoRate = 0; kg.lfoDepth = 0; kg.lfoDelay = 0;
+            kg.lfoDesync = true;
+            p->keygroups.push_back (kg);
+            return p;
+        }();
+
+        auto render = [&] (double rate, double depth, double delay, int samples)
+        {
+            s950::Engine engine (48000.0);
+            engine.setPatch (patch);
+            engine.trims.lfoRate .store (static_cast<float> (rate));
+            engine.trims.lfoDepth.store (static_cast<float> (depth));
+            engine.trims.lfoDelay.store (static_cast<float> (delay));
+
+            std::vector<float> buffer ((size_t) samples);
+            engine.noteOn (60, 100);
+            engine.render (buffer.data(), samples);
+            return buffer;
+        };
+
+        /// How far apart two renders are, in the same units as rms.
+        auto apart = [] (const std::vector<float>& a, const std::vector<float>& b)
+        {
+            const size_t n = std::min (a.size(), b.size());
+            double sum = 0.0;
+            for (size_t i = 0; i < n; ++i) { const double d = a[i] - b[i]; sum += d * d; }
+            return n ? std::sqrt (sum / (double) n) : 0.0;
+        };
+
+        const auto still = render (0.0, 0.0, 0.0, 24000);
+
+        // Nothing asked for is nothing done, which is the promise every trim here makes.
+        same ("every LFO trim at zero plays the disk",
+              apart (render (0.0, 0.0, 0.0, 24000), still), 0.0, 1e-12);
+
+        const auto wobbling = render (0.0, 99.0, 0.0, 24000);
+        check (apart (wobbling, still) > rms (still) * 0.2,
+               "a depth trim bends the pitch", apart (wobbling, still), rms (still) * 0.2);
+
+        /*
+         * Rate, read as how soon the bending starts.
+         *
+         * A faster LFO has travelled further from the middle of its swing by any given early
+         * moment, so over the first twentieth of a second it has pushed the note further off.
+         * Comparing the whole note instead would say only that two different wobbles differ.
+         */
+        const std::vector<float> stillEarly (still.begin(), still.begin() + 2400);
+        const auto slowEarly = render ( 0.0, 99.0, 0.0, 2400);
+        const auto fastEarly = render (99.0, 99.0, 0.0, 2400);
+
+        check (apart (fastEarly, stillEarly) > apart (slowEarly, stillEarly) * 1.5,
+               "a rate trim makes it wobble sooner",
+               apart (fastEarly, stillEarly), apart (slowEarly, stillEarly) * 1.5);
+
+        /*
+         * Delay, which is a fade-in rather than a wait: at the top of its range the depth
+         * climbs for seven and a half seconds, so the start of the note is barely bent at all
+         * where the same note without it is bent hard.
+         */
+        const auto faded = render (99.0, 99.0, 99.0, 2400);
+        check (apart (faded, stillEarly) < apart (fastEarly, stillEarly) * 0.5,
+               "a delay trim holds the wobble off the start",
+               apart (faded, stillEarly), apart (fastEarly, stillEarly) * 0.5);
+    }
+
     /*
      * The filter envelope runs on its own clock.
      *
@@ -950,6 +1040,7 @@ int main()
     checkEventTiming();
     checkTrims();
     checkEnvelopeTrims();
+    checkLfoTrims();
     checkFilterClock();
 
     std::printf ("\n  %d checks, %d failed\n\n", checks, failures);
