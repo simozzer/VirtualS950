@@ -449,8 +449,25 @@ namespace s950
             }
             else
             {
-                addZone (kg.zone1, 0, std::min (127, split - 1));
-                if (split <= 127) addZone (kg.zone2, split, 127);
+                /*
+                 * The byte is the LAST velocity of zone 1, not the first of zone 2.
+                 *
+                 * This read `zone1 0..split-1, zone2 split..127` and was out by one step.
+                 * Measured on the hardware with a sine in zone 1 and noise in zone 2:
+                 *
+                 *     switch    1     zone 1 at velocity 1,  zone 2 from 2
+                 *     switch   64     zone 1 through 64,     zone 2 from 65
+                 *     switch  127     zone 1 through 127,    zone 2 never
+                 *
+                 * That last line is what makes it certain. At a switch of 127 the hard sample
+                 * cannot be reached at all, which only follows if zone 2 begins at 128 - and
+                 * it is why the panel's range runs to 128 and why 128 means the switch is off.
+                 * The special case that used to say so has gone: with zone 2 starting at
+                 * split + 1, a split of 127 or 128 leaves it an empty range and addZone
+                 * declines it on its own.
+                 */
+                addZone (kg.zone1, 0, std::min (127, split));
+                addZone (kg.zone2, split + 1, 127);
             }
         }
 

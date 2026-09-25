@@ -272,8 +272,22 @@ namespace AkaiS950Studio
 
                 /*
                  * The two zones are velocity alternatives, so they split the range at the
-                 * switch rather than both sounding. A switch of 128 leaves zone 1 the
-                 * whole range, which is how the panel turns the second zone off.
+                 * switch rather than both sounding.
+                 *
+                 * The byte is the LAST velocity of zone 1, not the first of zone 2. This read
+                 * "zone1 0..split-1, zone2 split..127" and was out by one step. Measured on
+                 * the hardware with a sine in zone 1 and noise in zone 2:
+                 *
+                 *     switch    1     zone 1 at velocity 1,  zone 2 from 2
+                 *     switch   64     zone 1 through 64,     zone 2 from 65
+                 *     switch  127     zone 1 through 127,    zone 2 never
+                 *
+                 * The last line is what makes it certain: at a switch of 127 the hard sample
+                 * cannot be reached at all, which only follows if zone 2 begins at 128. It is
+                 * also why the panel's range runs to 128 and why 128 turns the switch off -
+                 * the special case that used to say so has gone, because with zone 2 starting
+                 * at split + 1 a split of 127 or 128 leaves it an empty range and AddZone
+                 * declines it on its own.
                  */
                 int split = kg.VelocitySwitch;
                 if (split < 1 || split > 128) split = 128;
@@ -284,8 +298,8 @@ namespace AkaiS950Studio
                 }
                 else
                 {
-                    AddZone(disk, patch, kg, kg.Zone1, 0, Math.Min(127, split - 1));
-                    if (split <= 127) AddZone(disk, patch, kg, kg.Zone2, split, 127);
+                    AddZone(disk, patch, kg, kg.Zone1, 0, Math.Min(127, split));
+                    AddZone(disk, patch, kg, kg.Zone2, split + 1, 127);
                 }
             }
 

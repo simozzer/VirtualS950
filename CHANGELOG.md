@@ -8,7 +8,33 @@ assumption it says that too — those are the ones another afternoon with a reco
 
 ## Unreleased
 
-Nothing yet.
+### The velocity switch was out by one, in all three engines
+
+A keygroup holds two samples and byte 2 says where one hands over to the other. Every engine
+read that byte as the *first* velocity of zone 2. It is the *last* velocity of zone 1.
+
+Measured on the hardware, with a sine in zone 1 and white noise in zone 2 so that which one
+answered needed no interpretation:
+
+| switch | zone 1 through | zone 2 from |
+|---|---|---|
+| 1 | 1 | 2 |
+| 64 | 64 | 65 |
+| 90 | 90 | 91 |
+| 127 | 127 | never |
+
+The last line is what makes it certain rather than merely consistent. At a switch of 127 the
+hard sample cannot be reached at all, which only follows if zone 2 begins at 128 — and that
+is why the panel's range runs to 128 and why 128 means the switch is off. What used to be a
+special case in the code saying so has gone: with zone 2 starting at `split + 1`, a split of
+127 or 128 leaves it an empty range and the engines decline it on their own.
+
+It is a switch and not a crossfade. Every clip read either 0.639 or 0.0001 of its energy at
+the tone's frequency, with nothing in between anywhere near a boundary.
+
+The practical effect is one velocity step at each switch point, which matters most where a
+programme puts the switch low or high — and it is exactly the kind of error that survives
+three implementations agreeing with each other.
 
 ## v0.3.0 — 2026-09-25
 
