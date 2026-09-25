@@ -52,25 +52,44 @@ VirtualS950Processor::describeParameters()
      * "12.4179993" is no use to anyone. A slider attachment overwrites whatever the slider
      * itself was told, so the parameter is the only place this actually sticks.
      */
-    auto addRange = [&layout] (const char* id, const char* name, float lo, float hi)
+    /*
+     * A control REPLACES what the programme says, across every keygroup of it.
+     *
+     * It used to be an offset, and the reasoning for that was real: a programme carries its
+     * own cutoff and envelope per keygroup, often quite different ones across the keyboard,
+     * and shifting them all by the same amount keeps whatever spread its author wrote. The
+     * cost was that the number under the knob was not the number the machine would show you -
+     * it was a distance from it - and no two keygroups ended up on the same setting.
+     *
+     * Replacing is the other trade: what the knob says is what every keygroup now is, and the
+     * spread is gone the moment you touch it. Which is what a player reaching for one control
+     * over a whole programme usually means.
+     *
+     * Every control therefore rests one step BELOW its range, and that position means "as
+     * recorded". It cannot be a musical value: zero is a closed filter and an instant attack,
+     * not an absence of opinion. So a freshly loaded programme plays exactly as the disk has
+     * it, every knob reads "as recorded", and nothing is flattened until something is moved.
+     * Double-click returns a control to it.
+     */
+    auto addControl = [&layout] (const char* id, const char* name, float lo, float hi)
     {
-        auto asOffset = [] (float v, int)
+        const float asRecorded = lo - 1.0f;
+
+        auto text = [lo] (float v, int)
         {
-            return juce::String (v >= 0.0f ? "+" : "") + juce::String (juce::roundToInt (v));
+            if (v < lo) return juce::String ("as recorded");
+
+            // Only the signed control gets a sign; on a 0..99 one a "+" would be noise.
+            return juce::String (lo < 0.0f && v >= 0.0f ? "+" : "")
+                 + juce::String (juce::roundToInt (v));
         };
 
         layout.add (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { id, 1 },
             name,
-            juce::NormalisableRange<float> (lo, hi, 0.0f),
-            0.0f,
-            juce::AudioParameterFloatAttributes().withStringFromValueFunction (asOffset)));
-    };
-
-    /// Symmetric: an offset that can go either way from what the disk says.
-    auto addTrim = [&addRange] (const char* id, const char* name, float span)
-    {
-        addRange (id, name, -span, span);
+            juce::NormalisableRange<float> (asRecorded, hi, 0.0f),
+            asRecorded,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction (text)));
     };
 
     /*
@@ -85,7 +104,7 @@ VirtualS950Processor::describeParameters()
      * The parameter ID stays vcfCutoff. Changing it would silently drop the setting out of
      * every session already saved with this plugin in it.
      */
-    addTrim ("vcfCutoff", "VCF Filter", 99.0f);
+    addControl ("vcfCutoff", "VCF Filter", 0.0f, 99.0f);
 
     /*
      * The amount reads -50..+50, which is the range printed on the machine.
@@ -107,7 +126,7 @@ VirtualS950Processor::describeParameters()
      * The one thing given up is inverting a keygroup that already sits at +50, which needs
      * an offset of -100. Thirty-four keygroups in the library are there.
      */
-    addTrim ("vcfAmount", "VCF Amnt", 50.0f);
+    addControl ("vcfAmount", "VCF Amnt", -50.0f, 50.0f);
 
     /*
      * The two envelopes, as offsets on the panel's 0..99 for each stage.
@@ -118,15 +137,15 @@ VirtualS950Processor::describeParameters()
      * middle of the range, which is the right way round - the middle is "as recorded", and
      * that is the value anyone wants to find again.
      */
-    addTrim ("vcaAttack",  "VCA Attack",  99.0f);
-    addTrim ("vcaDecay",   "VCA Decay",   99.0f);
-    addTrim ("vcaSustain", "VCA Sustain", 99.0f);
-    addTrim ("vcaRelease", "VCA Release", 99.0f);
+    addControl ("vcaAttack", "VCA Attack", 0.0f, 99.0f);
+    addControl ("vcaDecay", "VCA Decay", 0.0f, 99.0f);
+    addControl ("vcaSustain", "VCA Sustain", 0.0f, 99.0f);
+    addControl ("vcaRelease", "VCA Release", 0.0f, 99.0f);
 
-    addTrim ("vcfAttack",  "VCF Attack",  99.0f);
-    addTrim ("vcfDecay",   "VCF Decay",   99.0f);
-    addTrim ("vcfSustain", "VCF Sustain", 99.0f);
-    addTrim ("vcfRelease", "VCF Release", 99.0f);
+    addControl ("vcfAttack", "VCF Attack", 0.0f, 99.0f);
+    addControl ("vcfDecay", "VCF Decay", 0.0f, 99.0f);
+    addControl ("vcfSustain", "VCF Sustain", 0.0f, 99.0f);
+    addControl ("vcfRelease", "VCF Release", 0.0f, 99.0f);
 
     /*
      * The LFO, in the same 0..99 the panel uses, and as offsets like everything else here.
@@ -159,9 +178,9 @@ VirtualS950Processor::describeParameters()
      * What this gives up is turning DOWN a programme that already has vibrato dialled in.
      * That is rare enough to be worth the trade, and reaching for it is a keygroup edit.
      */
-    addRange ("lfoRate",  "LFO Rate",  0.0f, 99.0f);
-    addRange ("lfoDepth", "LFO Depth", 0.0f, 99.0f);
-    addRange ("lfoDelay", "LFO Delay", 0.0f, 99.0f);
+    addControl ("lfoRate",  "LFO Rate",  0.0f, 99.0f);
+    addControl ("lfoDepth", "LFO Depth", 0.0f, 99.0f);
+    addControl ("lfoDelay", "LFO Delay", 0.0f, 99.0f);
 
     /*
      * How hard you play, and what it reaches: the filter's frequency and the loudness.
@@ -176,8 +195,8 @@ VirtualS950Processor::describeParameters()
      * has ever modelled them and there is no measurement of what they would do. Controls for
      * those would be controls over invented behaviour.
      */
-    addRange ("velToFilter",   "Vel Freq",     0.0f, 99.0f);
-    addRange ("velToLoudness", "Vel Loudness", 0.0f, 99.0f);
+    addControl ("velToFilter",   "Vel Freq",     0.0f, 99.0f);
+    addControl ("velToLoudness", "Vel Loudness", 0.0f, 99.0f);
 
     return layout;
 }

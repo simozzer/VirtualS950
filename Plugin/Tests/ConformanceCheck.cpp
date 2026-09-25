@@ -428,9 +428,19 @@ namespace
      * worth holding - a trim that moved a variable without moving the audio would pass any
      * check that asked the variable.
      */
+    /*
+     * What a control reads when nobody has touched it.
+     *
+     * Not zero. The controls replace a programme's values rather than shifting them, so zero
+     * is a real setting - a shut filter, an instant attack - and every one of these checks
+     * has to say which of the two it means. Where a test wants "the disk, untouched", it says
+     * so with this.
+     */
+    constexpr double AsRecorded = s950::Trims::AsRecorded;
+
     void checkTrims()
     {
-        std::printf ("\n  the player's filter trims\n");
+        std::printf ("\n  the player's filter controls\n");
 
         auto patchWith = [] (int zoneFilter, int amount, bool vcfWritten)
         {
@@ -468,17 +478,19 @@ namespace
 
         const auto mid = patchWith (60, 0, true);
 
-        const double flat  = levelAt (mid,   0.0, 0.0);
-        const double shut  = levelAt (mid, -40.0, 0.0);
-        const double open  = levelAt (mid, +39.0, 0.0);
+        // The keygroup is at stored 60, so 30 is darker than it and 80 brighter. These are
+        // settings now, not distances: what goes in is what every keygroup ends up at.
+        const double flat  = levelAt (mid, AsRecorded, AsRecorded);
+        const double shut  = levelAt (mid,       30.0, AsRecorded);
+        const double open  = levelAt (mid,       80.0, AsRecorded);
 
-        check (shut < flat * 0.9, "closing the cutoff trim takes energy out", shut, flat);
-        check (open > flat,       "opening it puts energy back",              open, flat);
+        check (shut < flat * 0.9, "setting the filter lower takes energy out", shut, flat);
+        check (open > flat,       "setting it higher puts energy back",        open, flat);
 
-        // Zero has to mean "exactly as the disk says", or the instrument lies about its own
+        // "As recorded" has to mean exactly the disk, or the instrument lies about its own
         // programmes the moment the control exists.
-        const double again = levelAt (mid, 0.0, 0.0);
-        same ("a zero trim changes nothing", again, flat, 1e-12);
+        const double again = levelAt (mid, AsRecorded, AsRecorded);
+        same ("an untouched control changes nothing", again, flat, 1e-12);
 
         // The trim reaches a note that is ALREADY sounding, which is the whole difference
         // between a control and a setting that waits for the next key.
@@ -491,11 +503,11 @@ namespace
             engine.render (buffer.data(), static_cast<int> (buffer.size()));
             const double before = rms (buffer);
 
-            engine.trims.cutoff.store (-40.0f);
+            engine.trims.cutoff.store (30.0f);
             engine.render (buffer.data(), static_cast<int> (buffer.size()));
             const double after = rms (buffer);
 
-            check (after < before * 0.9, "a held note follows the trim", after, before);
+            check (after < before * 0.9, "a held note follows the control", after, before);
         }
 
         /*
@@ -507,9 +519,9 @@ namespace
          * same trim moved the level 3%, which is a true result and a poor test.
          */
         const auto low = patchWith (30, 0, true);
-        const double amountFlat = levelAt (low, 0.0,  0.0);
-        const double amountUp   = levelAt (low, 0.0, 40.0);
-        check (amountUp > amountFlat * 1.05, "the amount trim deepens the envelope",
+        const double amountFlat = levelAt (low, AsRecorded, AsRecorded);
+        const double amountUp   = levelAt (low, AsRecorded,       40.0);
+        check (amountUp > amountFlat * 1.05, "setting the amount deepens the envelope",
                amountUp, amountFlat);
 
         /*
@@ -525,13 +537,13 @@ namespace
          */
         const auto s900 = patchWith (60, 0, false);
 
-        const double blankFlat  = levelAt (s900, 0.0,  0.0);
-        const double writtenSame = levelAt (patchWith (60, 0, true), 0.0, 0.0);
+        const double blankFlat  = levelAt (s900, AsRecorded, AsRecorded);
+        const double writtenSame = levelAt (patchWith (60, 0, true), AsRecorded, AsRecorded);
         same ("an unwritten envelope untouched is an envelope that does nothing",
               blankFlat, writtenSame, 1e-12);
 
-        const double blankUp = levelAt (s900, 0.0, 40.0);
-        check (blankUp > blankFlat * 1.02, "and the amount trim can still build one",
+        const double blankUp = levelAt (s900, AsRecorded, 40.0);
+        check (blankUp > blankFlat * 1.02, "and the amount control can still build one",
                blankUp, blankFlat);
 
         /*
@@ -545,8 +557,8 @@ namespace
          * exactly that and move a tenth of an octave.
          */
         const auto bright = patchWith (80, 0, true);
-        const double upright  = levelAt (bright, 0.0,   0.0);
-        const double inverted = levelAt (bright, 0.0, -40.0);
+        const double upright  = levelAt (bright, AsRecorded, AsRecorded);
+        const double inverted = levelAt (bright, AsRecorded,      -40.0);
         check (inverted < upright * 0.9, "a negative amount inverts the envelope",
                inverted, upright);
 
@@ -572,10 +584,10 @@ namespace
          * pass whether the code did it or not.
          */
         const auto deep = patchWith (20, 15, true);
-        const double asWas  = levelAt (deep, 0.0,   0.0);
-        const double zeroed = levelAt (deep, 0.0, -15.0);
+        const double asWas  = levelAt (deep, AsRecorded, AsRecorded);
+        const double zeroed = levelAt (deep, AsRecorded,        0.0);
 
-        check (zeroed < asWas * 0.9, "the trim can cancel a keygroup's own amount",
+        check (zeroed < asWas * 0.9, "setting the amount to nothing removes the envelope",
                zeroed, asWas);
 
         /*
@@ -618,29 +630,45 @@ namespace
                 return rms (buffer);
             };
 
-            const double softFlat = atVelocity (40, 0.0);
-            const double hardFlat = atVelocity (100, 0.0);
+            const double softFlat = atVelocity (40,  AsRecorded);
+            const double hardFlat = atVelocity (100, AsRecorded);
 
             check (hardFlat > softFlat * 1.05,
-                   "the hard sample keeps its own brighter filter", hardFlat, softFlat);
+                   "untouched, the hard sample keeps its own brighter filter",
+                   hardFlat, softFlat);
 
-            const double softOpen = atVelocity (40, 25.0);
-            const double hardOpen = atVelocity (100, 25.0);
+            const double softSet = atVelocity (40,  60.0);
+            const double hardSet = atVelocity (100, 60.0);
 
-            check (softOpen > softFlat * 1.05, "one Filter knob opens the soft sample",
-                   softOpen, softFlat);
-            check (hardOpen > hardFlat * 1.05, "and the hard one too", hardOpen, hardFlat);
+            check (softSet > softFlat * 1.05, "one Filter knob reaches the soft sample",
+                   softSet, softFlat);
+            check (hardSet > hardFlat * 1.05, "and the hard one too", hardSet, hardFlat);
+
+            /*
+             * And the gap between them is GONE, which is the point of the change and the
+             * price of it.
+             *
+             * While this was an offset it shifted both zones and kept whatever distance the
+             * programmer put between them - 54% of the library's two-zone keygroups set the
+             * soft and hard filters apart. A control that replaces cannot do that: both
+             * samples are now at 60 and the two velocities sound the same. Asserted rather
+             * than merely accepted, because it is the behaviour that was asked for and the
+             * one most likely to be mistaken for a bug.
+             */
+            same ("and both now sit at the same filter, the spread flattened",
+                  softSet, hardSet, 1e-12);
 
             // untouched, it has to leave both exactly as the disk describes them
             same ("at rest it changes the soft sample not at all",
-                  atVelocity (40, 0.0), softFlat, 1e-12);
-            same ("nor the hard one", atVelocity (100, 0.0), hardFlat, 1e-12);
+                  atVelocity (40, AsRecorded), softFlat, 1e-12);
+            same ("nor the hard one", atVelocity (100, AsRecorded), hardFlat, 1e-12);
         }
 
-        // The stops still hold: a trim cannot open the filter past the reconstruction limit.
-        const double wideOpen = levelAt (patchWith (99, 0, true), 0.0, 0.0);
-        const double shoved   = levelAt (patchWith (99, 0, true), 99.0, 0.0);
-        same ("the trim cannot open past the stop", shoved, wideOpen, 1e-12);
+        // The stops still hold: a control cannot open the filter past the reconstruction
+        // limit, so a keygroup already at 99 set to 99 is exactly where it was.
+        const double wideOpen = levelAt (patchWith (99, 0, true), AsRecorded, AsRecorded);
+        const double shoved   = levelAt (patchWith (99, 0, true),       99.0, AsRecorded);
+        same ("setting the filter to its own value changes nothing", shoved, wideOpen, 1e-12);
     }
 
     // ------------------------------------------------------------ the envelope trims
@@ -691,35 +719,37 @@ namespace
 
         using AT = s950::Engine::AtomicTrims;
 
-        // Attack: a long one means the first tenth of a second is quiet.
-        const double fast = withTrim (&AT::vcaAttack,  0.0, 4800);
-        const double slow = withTrim (&AT::vcaAttack, 70.0, 4800);
-        check (slow < fast * 0.5, "an attack trim slows the attack", slow, fast);
+        // Attack: a long one means the first tenth of a second is quiet. The keygroup's own
+        // attack is 0, so "as recorded" and a setting of 0 agree here.
+        const double fast = withTrim (&AT::vcaAttack, AsRecorded, 4800);
+        const double slow = withTrim (&AT::vcaAttack,       70.0, 4800);
+        check (slow < fast * 0.5, "setting the attack slows it", slow, fast);
 
-        // Sustain: pulling it down takes level out of a gate that otherwise holds flat.
-        const double full  = withTrim (&AT::vcaSustain,   0.0, 4800);
-        const double lower = withTrim (&AT::vcaSustain, -50.0, 4800);
-        check (lower < full * 0.9, "a sustain trim lowers the level", lower, full);
+        // Sustain: the keygroup holds at 99, so setting 40 takes level out of a gate that
+        // otherwise stays flat.
+        const double full  = withTrim (&AT::vcaSustain, AsRecorded, 4800);
+        const double lower = withTrim (&AT::vcaSustain,       40.0, 4800);
+        check (lower < full * 0.9, "setting the sustain lowers the level", lower, full);
 
-        // Decay: with sustain pulled down, a slower decay takes longer to get there, so
-        // more level survives the window.
+        // Decay: with the sustain set to nothing, a slower decay takes longer to get there,
+        // so more level survives the window.
         {
             s950::Engine quick (48000.0), slowly (48000.0);
             std::vector<float> a (4800), b (4800);
 
             quick.setPatch (patch);
-            quick.trims.vcaSustain.store (-99.0f);
+            quick.trims.vcaSustain.store (0.0f);
             quick.trims.vcaDecay.store (0.0f);
             quick.noteOn (60, 100);
             quick.render (a.data(), 4800);
 
             slowly.setPatch (patch);
-            slowly.trims.vcaSustain.store (-99.0f);
+            slowly.trims.vcaSustain.store (0.0f);
             slowly.trims.vcaDecay.store (70.0f);
             slowly.noteOn (60, 100);
             slowly.render (b.data(), 4800);
 
-            check (rms (b) > rms (a) * 1.1, "a decay trim slows the decay", rms (b), rms (a));
+            check (rms (b) > rms (a) * 1.1, "setting the decay slows it", rms (b), rms (a));
         }
 
         // Release: a longer one rings on after the key is let go.
@@ -738,14 +768,14 @@ namespace
                 return rms (buffer);
             };
 
-            const double curt = ringing (0.0);
+            const double curt = ringing (AsRecorded);
             const double rings = ringing (70.0);
-            check (rings > curt * 2.0, "a release trim rings on", rings, curt);
+            check (rings > curt * 2.0, "setting the release makes it ring on", rings, curt);
         }
 
-        // Nothing moved means nothing changed, which is the promise the whole set makes.
-        const double asWritten = withTrim (&AT::vcaAttack, 0.0, 4800);
-        same ("every trim at zero plays the disk", asWritten, fast, 1e-12);
+        // Nothing touched means nothing changed, which is the promise the whole set makes.
+        const double asWritten = withTrim (&AT::vcaAttack, AsRecorded, 4800);
+        same ("every control at rest plays the disk", asWritten, fast, 1e-12);
 
         /*
          * The VCF stages reach the filter, not the level. A slower filter decay holds the
@@ -776,9 +806,9 @@ namespace
                 return rms (buffer);
             };
 
-            const double brief = swept (0.0);
+            const double brief = swept (AsRecorded);
             const double held  = swept (60.0);
-            check (held > brief * 1.1, "a VCF decay trim holds the sweep open", held, brief);
+            check (held > brief * 1.1, "setting the VCF decay holds the sweep open", held, brief);
         }
 
         /*
@@ -945,13 +975,13 @@ namespace
             return n ? std::sqrt (sum / (double) n) : 0.0;
         };
 
-        const auto still = render (0.0, 0.0, 0.0, 24000);
+        const auto still = render (AsRecorded, AsRecorded, AsRecorded, 24000);
 
         // Nothing asked for is nothing done, which is the promise every trim here makes.
-        same ("every LFO trim at zero plays the disk",
-              apart (render (0.0, 0.0, 0.0, 24000), still), 0.0, 1e-12);
+        same ("every LFO control at rest plays the disk",
+              apart (render (AsRecorded, AsRecorded, AsRecorded, 24000), still), 0.0, 1e-12);
 
-        const auto wobbling = render (0.0, 99.0, 0.0, 24000);
+        const auto wobbling = render (AsRecorded, 99.0, AsRecorded, 24000);
         check (apart (wobbling, still) > rms (still) * 0.2,
                "a depth trim bends the pitch", apart (wobbling, still), rms (still) * 0.2);
 
@@ -963,8 +993,8 @@ namespace
          * Comparing the whole note instead would say only that two different wobbles differ.
          */
         const std::vector<float> stillEarly (still.begin(), still.begin() + 2400);
-        const auto slowEarly = render ( 0.0, 99.0, 0.0, 2400);
-        const auto fastEarly = render (99.0, 99.0, 0.0, 2400);
+        const auto slowEarly = render (       0.0, 99.0, AsRecorded, 2400);
+        const auto fastEarly = render (      99.0, 99.0, AsRecorded, 2400);
 
         check (apart (fastEarly, stillEarly) > apart (slowEarly, stillEarly) * 1.5,
                "a rate trim makes it wobble sooner",
