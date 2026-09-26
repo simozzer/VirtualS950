@@ -501,43 +501,68 @@ namespace AkaiS950Engine
         /// overlap, which 13 library pairs have, sits at x = 1/2 and splits evenly at
         /// -4.5 dB, where i/(N-1) divides by zero.
         ///
-        /// A TABLE RATHER THAN A CURVE. cos(pi x / 2) ^ 1.44 fits to about 0.5 dB rms, close
-        /// enough to be tempting, but the measured values arrive in clumps - -0.2 at three
-        /// different x, then -0.3, -0.4, -0.6, a jump to -1.2 - which is what a gain LOOKUP
-        /// does and not what a curve does. Fitting a smooth function through a quantised one
-        /// is how EnvTime came to be 20% wrong in its middle.
+        /// THE FIRST VERSION OF THIS TABLE WAS MEASURED THROUGH A LIMITER AND WAS WRONG.
+        /// Every calibration take up to run 17 was recorded with 20-30% of its samples
+        /// pinned within 0.1 dB of -0.49 dBFS. The crossfade is the one TWO-TONE measurement
+        /// in the rig, and that is what made it the worst casualty: a weak tone sharing a
+        /// signal with a limited strong one is dragged down by the strong one's gain
+        /// reduction, so the error grows as the tones become unequal - towards the edges of
+        /// the overlap. The old readings were out by 0.2 dB at x = 0.1, 1.5 dB at x = 0.5
+        /// and 6.1 dB at x = 0.9, and gave cos(pi x / 2) ^ 1.44 with the pair dipping 1.3 dB
+        /// at the midpoint. "No standard crossfade does that" was written down at run 15 and
+        /// treated as a curiosity. It was the limiter.
         ///
-        /// WIDTH 9 DISAGREES AT ITS LAST KEY: x = 0.9 reads -22.2 where width 13 at 0.929
-        /// and width 21 at 0.909 both read -26.2. Nearly 3 dB, against the 0.1 the rest
-        /// agree to, and the only place they part. Both points are kept, so every measured
-        /// width reproduces itself exactly and the disagreement is confined to widths
-        /// nobody has played.
+        /// Clean, the pair conserves power to 0.1 dB.
+        ///
+        /// A TABLE RATHER THAN A CURVE, AND NOW FOR A MEASURED REASON. Every distinct level
+        /// in the clean take is a whole number of 0.4 DECIBEL STEPS - eighteen of them, from
+        /// 0 to -28.0, landing on the grid to better than 0.1 dB:
+        ///
+        ///     dB      0.0  -0.4  -0.8  -1.2  -1.6  -2.0  -3.2  -5.6  -6.0  -6.8  -8.0  -8.8
+        ///     steps     0     1     2     3     4     5     8    14    15    17    20    22
+        ///
+        /// and 0.4 dB is the same unit run 19 measured for the SUSTAIN, at 0.400 dB per
+        /// stored unit. The machine counts decibels in 0.4 dB steps and the crossfade is a
+        /// lookup of that count, so no smooth function can be right in detail.
+        ///
+        /// WIDTH 9 DISAGREES AT ITS LAST KEY, and it survived the re-record: x = 0.9 reads
+        /// -17.6 where width 13 at 0.929 and width 21 at 0.909 both read -21.6. Four
+        /// decibels, against the 0.1 the rest agree to. With the gain quantised that is what
+        /// you would expect - two (i, N) pairs landing on nearby x can still fall on
+        /// different integer steps - so the real rule is arithmetic on i and N rather than a
+        /// function of x, and nobody has worked it out. Both points are kept, so every
+        /// measured width reproduces its own reading.
         ///
         /// x = 0 and x = 1 are extrapolations, reached only by overlaps wider than 21 keys:
         /// x lives in [1/(N+1), N/(N+1)] and width 21 already spans 0.045 to 0.955.
         /// </summary>
         public static readonly double[,] XfadeDb =
         {
-            { 0.00000,   0.00 }, { 0.04545,  -0.20 }, { 0.07143,  -0.20 }, { 0.09091,  -0.20 },
-            { 0.10000,  -0.30 }, { 0.13636,  -0.40 }, { 0.14286,  -0.40 }, { 0.16667,  -0.50 },
-            { 0.20000,  -0.60 }, { 0.21429,  -0.60 }, { 0.25000,  -1.20 }, { 0.30000,  -1.50 },
-            { 0.31818,  -2.00 }, { 0.33333,  -2.00 }, { 0.35714,  -2.25 }, { 0.40000,  -2.60 },
-            { 0.50000,  -4.50 }, { 0.60000,  -7.30 }, { 0.64286,  -7.95 }, { 0.66667,  -8.70 },
-            { 0.68182,  -8.70 }, { 0.70000, -10.25 }, { 0.75000, -11.55 }, { 0.78571, -15.35 },
-            { 0.80000, -15.30 }, { 0.83333, -17.05 }, { 0.85714, -19.15 }, { 0.86364, -19.10 },
-            { 0.90000, -22.25 }, { 0.90909, -26.25 }, { 0.92857, -26.25 }, { 0.95455, -32.75 },
-            { 1.00000, -40.00 }
+            { 0.00000,   0.00 }, { 0.04545,   0.00 }, { 0.07143,   0.00 }, { 0.09091,   0.00 },
+            { 0.10000,   0.00 }, { 0.13636,  -0.40 }, { 0.14286,  -0.40 }, { 0.16667,  -0.40 },
+            { 0.20000,  -0.40 }, { 0.21429,  -0.40 }, { 0.25000,  -0.80 }, { 0.30000,  -1.20 },
+            { 0.31818,  -1.60 }, { 0.33333,  -1.60 }, { 0.35714,  -1.60 }, { 0.40000,  -2.00 },
+            { 0.50000,  -3.20 }, { 0.60000,  -5.60 }, { 0.64286,  -6.00 }, { 0.66667,  -6.80 },
+            { 0.68182,  -6.80 }, { 0.70000,  -8.00 }, { 0.75000,  -8.80 }, { 0.78571, -11.60 },
+            { 0.80000, -11.60 }, { 0.83333, -13.20 }, { 0.85714, -15.20 }, { 0.86364, -15.20 },
+            { 0.90000, -17.60 }, { 0.90909, -21.60 }, { 0.92857, -21.60 }, { 0.95455, -28.00 },
+            { 1.00000, -39.20 }
         };
 
         /// <summary>
         /// TWO KEYGROUPS ON EXACTLY THE SAME KEYS ARE NOT FADED. They sit at a constant
-        /// 3.7 dB down apiece, the same at every key across a thirteen-key range, which is
-        /// what run 15 measured with the crossfade on.
-        ///
-        /// It is not the table read at some x - it does not move with the key at all, and
-        /// the table holds no value that flat. 17 library pairs are exactly this, the
+        /// level down apiece, the same at every key across a thirteen-key range, which is
+        /// what run 15 measured with the crossfade on. It is not the table read at some x -
+        /// it does not move with the key at all. 17 library pairs are exactly this, the
         /// ARP2600 layers, and treating identical ranges as an overlap to fade across would
         /// have half-silenced every one of them.
+        ///
+        /// PROVISIONAL. Run 15 read -3.7 dB and run 15 went through the limiter, at 25% of
+        /// its samples pinned. That same take read the overlap midpoint 1.4 dB too deep, and
+        /// -3.7 is about that far from -3.2, the 8-step value the clean midpoint turned out
+        /// to be. So the true figure is very likely -3.2 and the same eight steps - but that
+        /// is inference from a neighbouring measurement, not a reading, and run 15 has not
+        /// been re-recorded. Left at what was actually measured until it is.
         /// </summary>
         public const double XfadeSameRangeDb = -3.7;
 

@@ -202,18 +202,32 @@ and an editor worth looking at — are all done. What is left is measurement, no
 
    A key's position in the overlap is `x = (i + 1) / (N + 1)`, and the attenuation comes from
    a measured table rather than a formula — see `Cal.XfadeDb`. Seven overlap widths from 1 key
-   to 21 agree to 0.1 dB wherever two of them land on the same `x`, and the table predicts
-   run 15's seven-key overlap — a width run 17 never played, on another disk in another
-   session — to 0.33 dB rms.
+   to 21 agree to 0.1 dB wherever two of them land on the same `x`.
+
+   **The first version of this table was measured through a limiter and was wrong.** Every
+   take up to run 17 had 20–30% of its samples pinned within 0.1 dB of −0.49 dBFS. The
+   crossfade is the rig's only two-tone measurement, which is what made it the worst
+   casualty — a weak tone beside a limited strong one is dragged down by the strong one's
+   gain reduction, so the error grew towards the overlap's edges: 0.2 dB at `x` = 0.1,
+   1.5 dB at 0.5, 6.1 dB at 0.9. Re-recorded clean, the table shifted by up to 4.75 dB and
+   two independent clean takes (runs 17 and 19) now agree to 0.05 dB.
+
+   Every distinct level in the clean take is a whole number of **0.4 dB steps** — the same
+   unit run 19 measured for the sustain. The machine counts decibels in 0.4 dB and the
+   crossfade is a lookup of that count.
 
    Three things about it are less than settled:
 
-   - **Width 9 disagrees with widths 13 and 21 at its last key**, −22.2 dB against −26.2 at
-     nearly the same `x`. Both points are in the table, so every measured width reproduces
-     itself, but a width nobody has played could be 3 dB out near the far edge.
-   - **Three-deep overlaps carry about 2 dB of slack.** The pairwise fades multiply, which is
-     what run 15's stack fits; it runs deep through the middle. Two-deep is exact, and that is
-     what the library's pianos use.
+   - **Width 9 disagrees with widths 13 and 21 at its last key**, −17.6 dB against −21.6 at
+     nearly the same `x`, and it survived the clean re-record. With the gain quantised that
+     is expected — two `(i, N)` pairs at nearby `x` can fall on different integer steps — so
+     the real rule is arithmetic on `i` and `N`, not a function of `x`. Nobody has worked it
+     out. Every measured width reproduces its own reading; an unplayed width could be 4 dB
+     out near the far edge.
+   - **The identical-range value and the three-deep rule are still from limited data.**
+     Run 15 has not been re-recorded, so `XfadeSameRangeDb` (−3.7) and the pairwise-product
+     rule for three overlapping keygroups both rest on a take with 25% of its samples pinned.
+     −3.2 is the likely true value for the first, by analogy with the midpoint.
    - **Nobody has measured what byte 21 = 0 does to an overlap.** Both keygroups at full level
      is the assumption and what the engines do. One section on a future disk settles it.
 1. **`ENV_TIME` is about 20% slow around stored 45.** Run 9 measured the release span as a
