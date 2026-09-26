@@ -38,7 +38,7 @@ namespace AkaiS950Engine
         int _write, _read;
 
         const byte EvNoteOn = 1, EvNoteOff = 2, EvWheel = 3, EvAllOff = 4, EvRepatch = 5,
-                   EvBend = 6;
+                   EvBend = 6, EvPressure = 7;
 
         Patch _patch;
         long _sequence;
@@ -56,6 +56,7 @@ namespace AkaiS950Engine
         int _startedCount, _startedNote = -1;
         double _sharedPhase, _sharedStep;
         int _wheel;
+        int _pressure;               // channel aftertouch, 0..127, at rest at nothing
         int _bend14 = 8192;          // the pitch wheel, at rest in the middle
 
         public double SampleRate { get; private set; }
@@ -127,6 +128,12 @@ namespace AkaiS950Engine
         public void Modwheel(int value) { Post(EvWheel, value, 0); }
 
         /// <summary>
+        /// Channel aftertouch, 0..127. One value for the whole keyboard: the S950 has no
+        /// polyphonic pressure input, so there is nothing per-key to carry.
+        /// </summary>
+        public void Aftertouch(int value) { Post(EvPressure, value, 0); }
+
+        /// <summary>
         /// The pitch wheel, 0..16383 with 8192 at rest. Split across the event's two byte
         /// fields, because fourteen bits do not fit in one.
         /// </summary>
@@ -171,6 +178,7 @@ namespace AkaiS950Engine
                     case EvNoteOn: StartNote(e.A, e.B); break;
                     case EvNoteOff: StopNote(e.A); break;
                     case EvWheel: _wheel = e.A; break;
+                    case EvPressure: _pressure = e.A; break;
                     case EvBend: _bend14 = (e.A << 7) | e.B; break;
                     case EvRepatch: Repatch(); break;
                     case EvAllOff:
@@ -244,10 +252,24 @@ namespace AkaiS950Engine
                     ? Cal.CrossfadeGain(note, _matchedLow, _matchedHigh, matched, m)
                     : 1.0;
 
-                // What the wheel adds, in cents. Byte 22 scales it, proportionally - the
-                // machine gave 0.509 of full at byte 22 = 50, where proportional is 0.505.
+                /*
+                 * What the two performance controllers add, in cents.
+                 *
+                 * The modwheel is byte 22 and channel pressure is byte 21, and the
+                 * aftertouch run measured them to be THE SAME MECHANISM from different
+                 * sources. At full, aftertouch gave 71.95 cents against the wheel's 72.3 -
+                 * one constant, not two. Byte 21 scales it proportionally, reading 0.511
+                 * of full at 50 where a straight proportion is 0.505 and byte 22 gave
+                 * 0.509. And the two ADD: wheel alone read 71.87 cents, wheel and pressure
+                 * together 149.79, where taking the larger would have left it at 71.87.
+                 *
+                 * Byte 21 used to be read and dropped, on the grounds that it is 0 in all
+                 * 1908 keygroups of one person's disks. Other people have other disks.
+                 */
                 double wheelCents = Cal.LfoWheelCentsAtFull *
-                                    (kg.LfoModwheelDepth / 99.0) * (_wheel / 127.0);
+                                    (kg.LfoModwheelDepth / 99.0) * (_wheel / 127.0)
+                                  + Cal.LfoWheelCentsAtFull *
+                                    (kg.LfoAftertouchDepth / 99.0) * (_pressure / 127.0);
 
                 if (kg.LfoDepth * Cal.LfoDepthCentsPerUnit + wheelCents < 0.5) wheelCents = 0;
 

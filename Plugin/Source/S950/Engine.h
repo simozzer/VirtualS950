@@ -113,6 +113,10 @@ namespace s950
         void noteOff (int note, int at = 0)              { post (EvNoteOff, note, 0, at); }
         void modwheel (int value, int at = 0)            { post (EvWheel,   value, 0, at); }
 
+        /// Channel aftertouch, 0..127. One value for the whole keyboard: the S950 has no
+        /// polyphonic pressure input, so there is nothing per-key to carry.
+        void aftertouch (int value, int at = 0)          { post (EvPressure, value, 0, at); }
+
         /*
          * The pitch wheel, 0..16383 with 8192 at rest.
          *
@@ -166,6 +170,7 @@ namespace s950
         static constexpr unsigned char EvWheel   = 3;
         static constexpr unsigned char EvAllOff  = 4;
         static constexpr unsigned char EvBend    = 5;
+        static constexpr unsigned char EvPressure = 6;
 
         static constexpr int RingSize = 256;
 
@@ -217,6 +222,7 @@ namespace s950
         long long sequence = 0;
         double    sharedPhase = 0.0, sharedStep = 0.0;
         int       wheel = 0;
+        int       pressure = 0;          // channel aftertouch, at rest at nothing
         int       bend14 = 8192;         // the pitch wheel, at rest in the middle
     };
 }

@@ -453,6 +453,7 @@ namespace s950
                 p.lfoRate          = kg.lfoRate;
                 p.lfoDepth         = kg.lfoDepth;
                 p.lfoModwheelDepth = kg.lfoModwheelDepth;
+                p.lfoAftertouchDepth = kg.lfoAftertouchDepth;
                 p.lfoDesync        = kg.lfoDesync();
 
                 p.zoneFilter    = zone.filter;

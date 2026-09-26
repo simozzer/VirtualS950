@@ -371,7 +371,8 @@ namespace AkaiS950Studio
                 OutputPort = kg.OutputPort,
 
                 LfoDelay = kg.LfoDelay, LfoRate = kg.LfoRate, LfoDepth = kg.LfoDepth,
-                LfoModwheelDepth = kg.LfoModwheelDepth, LfoDesync = kg.LfoDesync,
+                LfoModwheelDepth = kg.LfoModwheelDepth,
+                LfoAftertouchDepth = kg.LfoAftertouchDepth, LfoDesync = kg.LfoDesync,
 
                 ZoneFilter = zone.Filter,
                 ZoneLoudness = zone.Loudness,

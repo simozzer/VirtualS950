@@ -142,6 +142,7 @@ namespace s950
             case EvNoteOn:  startNote (e.a, e.b); break;
             case EvNoteOff: stopNote (e.a);       break;
             case EvWheel:   wheel = e.a;                break;
+            case EvPressure: pressure = e.a;            break;
             case EvBend:    bend14 = (e.a << 7) | e.b;  break;
 
             case EvAllOff:
@@ -223,11 +224,26 @@ namespace s950
                                                         fadeCount, index)
                                   : 1.0;
 
-            // What the wheel adds, in cents. Byte 22 scales it, proportionally - the machine
-            // gave 0.509 of full at byte 22 = 50, where proportional is 0.505.
+            /*
+             * What the two performance controllers add, in cents.
+             *
+             * The modwheel is byte 22 and channel pressure is byte 21, and the aftertouch
+             * run measured them to be THE SAME MECHANISM from different sources. At full,
+             * aftertouch gave 71.95 cents against the wheel's 72.3 - one constant, not
+             * two. Byte 21 scales it proportionally, reading 0.511 of full at 50 where a
+             * straight proportion is 0.505 and byte 22 gave 0.509. And the two ADD: wheel
+             * alone read 71.87 cents, wheel and pressure together 149.79, where taking the
+             * larger would have left it at 71.87.
+             *
+             * Byte 21 used to be read and dropped, on the grounds that it is 0 in all 1908
+             * keygroups of one person's disks. Other people have other disks.
+             */
             double wheelCents = cal::LfoWheelCentsAtFull
-                                * (kg->lfoModwheelDepth / 99.0)
-                                * (wheel / 127.0);
+                                  * (kg->lfoModwheelDepth / 99.0)
+                                  * (wheel / 127.0)
+                              + cal::LfoWheelCentsAtFull
+                                  * (kg->lfoAftertouchDepth / 99.0)
+                                  * (pressure / 127.0);
 
             if (kg->lfoDepth * cal::LfoDepthCentsPerUnit + wheelCents < 0.5)
                 wheelCents = 0.0;

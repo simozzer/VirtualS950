@@ -116,6 +116,11 @@ namespace s950
         int outputPort = 0;
 
         int  lfoDelay = 0, lfoRate = 0, lfoDepth = 0, lfoModwheelDepth = 0;
+
+        /// Byte 21: how far channel pressure scales the LFO's depth, exactly as byte 22
+        /// does for the modwheel. Measured on the aftertouch run - see Engine::startNote.
+        int  lfoAftertouchDepth = 0;
+
         bool lfoDesync = true;           // set in 1652 keygroups of 1908
 
         int    zoneFilter    = 99;       // zone 1's cutoff, 0..99

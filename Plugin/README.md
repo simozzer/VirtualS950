@@ -383,23 +383,27 @@ and an editor worth looking at — are all done. What is left is measurement, no
 
    Run 22 also confirmed `WarpTime` in passing — byte 14 = 50 read 68–72 ms across nine
    clips against the table's 69.5.
-7. **LFO depth from aftertouch (byte 21) is read and dropped**, and the plugin has no
-   channel-pressure handling at all.
+7. **Done — aftertouch (byte 21) is measured and modelled, and it is the modwheel's twin.**
 
    This item used to excuse itself: "it is 0 in every one of the 1908 real keygroups, so
-   nothing on any disk plays wrongly". That is the wrong test and it is worth saying why.
-   The 1908 keygroups are **one person's shelf of disks**, and this is a tool other people
-   point at their own libraries. A byte that nobody here happens to set is not a byte nobody
-   sets — it is a byte with no evidence either way, and "no evidence" was being written down
-   as "no problem". Every other gap on this list is ranked by how many library keygroups it
-   touches, which is a fair way to order work and a bad way to decide what counts as a bug.
+   nothing on any disk plays wrongly". That is the wrong test. The 1908 keygroups are **one
+   person's shelf of disks**, and this is a tool other people point at their own libraries —
+   so a byte nobody here happens to set is not a byte nobody sets. It had no evidence either
+   way, and that was being written down as "no problem". Ranking work by how many library
+   keygroups something touches is fair; deciding what counts as a *bug* that way is not.
 
-   The measurement belongs to the LFO rig rather than the envelope one: `lfomidi.js` already
-   emits controllers and `lfocal.js` already reads pitch deviation, so aftertouch is a new
-   event kind (channel pressure, `0xD0`) and a section in `lfoplan.js` beside the modwheel
-   sweep that is already there. The likely answer is that byte 21 behaves exactly as byte 22
-   does with a different source — but that is a guess, and byte 22's own law was measured,
-   so this one can be.
+   The aftertouch run (`lfoplan2.js`, four clips, 42 s) settled all three questions:
+
+   - **The travel.** 71.95 cents at full pressure with byte 21 = 99, r² 0.999 across nine
+     steps — against the modwheel's 72.3. **One constant, not two.**
+   - **The law of the byte.** 36.42 cents at byte 21 = 50 against 71.32 at 99, a ratio of
+     0.511 where a straight proportion is 0.505 and byte 22 measured 0.509. The same law.
+   - **They add.** Wheel alone read 71.87 cents; wheel and pressure together 149.79. A
+     machine taking the larger of the two would have stayed at 71.87.
+
+   So no new constant — `LfoWheelCentsAtFull` serves both, and the two contributions sum.
+   All three engines now carry byte 21 through to the voice, and the plugin handles channel
+   pressure. The S950 has no polyphonic pressure input, so only the channel message counts.
 8. **The eight individual outputs are played centred, which is a guess.** Byte 19 sends a
    keygroup to ALL, to one of MONO 1–8, or hard LEFT or RIGHT. LEFT and RIGHT are modelled;
    MONO 1–8 are centred because nobody has checked what the machine's main stereo pair does

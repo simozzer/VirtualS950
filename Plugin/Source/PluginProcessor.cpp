@@ -421,6 +421,11 @@ void VirtualS950Processor::processBlock (juce::AudioBuffer<float>& buffer,
             engine->modwheel (m.getControllerValue(), at);
         else if (m.isPitchWheel())
             engine->pitchBend (m.getPitchWheelValue(), at);
+
+        // Channel pressure drives keygroup byte 21, the LFO's aftertouch depth. The
+        // machine has no polyphonic pressure input, so only the channel message counts.
+        else if (m.isChannelPressure())
+            engine->aftertouch (m.getChannelPressureValue(), at);
         else if (m.isAllNotesOff() || m.isAllSoundOff())
             engine->allNotesOff (at);
         else if (m.isController())

@@ -107,6 +107,12 @@ namespace AkaiS950Engine
         public int OutputPort;
 
         public int LfoDelay, LfoRate, LfoDepth, LfoModwheelDepth;
+
+        /// <summary>
+        /// Byte 21: how far channel pressure scales the LFO's depth, exactly as byte 22
+        /// does for the modwheel. Measured on the aftertouch run - see Engine.StartNote.
+        /// </summary>
+        public int LfoAftertouchDepth;
         public bool LfoDesync = true;    // set in 1652 keygroups of 1908
 
         public int ZoneFilter = 99;      // zone 1's cutoff, 0..99
