@@ -224,10 +224,13 @@ and an editor worth looking at — are all done. What is left is measurement, no
      the real rule is arithmetic on `i` and `N`, not a function of `x`. Nobody has worked it
      out. Every measured width reproduces its own reading; an unplayed width could be 4 dB
      out near the far edge.
-   - **The identical-range value and the three-deep rule are still from limited data.**
-     Run 15 has not been re-recorded, so `XfadeSameRangeDb` (−3.7) and the pairwise-product
-     rule for three overlapping keygroups both rest on a take with 25% of its samples pinned.
-     −3.2 is the likely true value for the first, by analogy with the midpoint.
+   - **The identical-range value is the last thing still resting on limited data.**
+     `XfadeSameRangeDb` (−3.7) comes from the one section of run 15 that still hits the
+     ceiling — it is the loudest in the run, two keygroups both at nearly full level, so the
+     tones sum to the highest crest anywhere. Its reading has moved from −3.7 (25% pinned) to
+     −0.7 (14.5% pinned), and a pair at full level sums to +3.0, so identical ranges are
+     probably not attenuated at all. Not shipped on a trend across two spoilt takes; it is
+     wrong in the safe direction meanwhile. One section of a quieter take settles it.
    - **Nobody has measured what byte 21 = 0 does to an overlap.** Both keygroups at full level
      is the assumption and what the engines do. One section on a future disk settles it.
 1. **`ENV_TIME` is about 20% slow around stored 45.** Run 9 measured the release span as a
