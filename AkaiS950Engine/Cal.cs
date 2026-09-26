@@ -88,7 +88,23 @@ namespace AkaiS950Engine
         /// It also starts a unit or two off zero rather than at it. That dead zone is real
         /// and measured but not modelled here; it is worth less than the 9% this corrects.
         /// </summary>
-        public const double EnvOctaves = 8.5;
+        /// RUN 20 REPEATED THIS ON A CLEAN TAKE, six amounts each way, and landed almost
+        /// exactly where run 1 did nineteen runs earlier:
+        ///
+        ///               run 1    run 20
+        ///     opening    8.37      8.39
+        ///     closing    8.28      8.20
+        ///
+        /// So 8.3, which is what the measurements have said all along. The 8.5 that used to
+        /// be here matched neither of them and matched no reading in its own comment - a
+        /// value the evidence had quietly outgrown. Run 5's 7.7 and 7.56 are the ones to
+        /// discard: they came from a sweep that hit a stop, which the note of the day said
+        /// to avoid by basing the test near the floor. Runs 1 and 20 both do.
+        ///
+        /// The two directions are not quite equal - run 20 has closing at 0.978 of opening,
+        /// against 0.999 for the same disk rendered through this model, so the asymmetry is
+        /// the machine rather than the method. 2%, left unmodelled.
+        public const double EnvOctaves = 8.3;
 
         // -------------------------------------------------------------- the envelopes
 
@@ -570,7 +586,23 @@ namespace AkaiS950Engine
         public const double SustainDb = 39.6;
 
         /// <summary>Measured: a stored +20 read 5.7 dB up.</summary>
-        public const double LoudnessDbPerUnit = 0.29;
+        /// It was 0.29 dB a unit from ONE reading - a stored +20 that measured 5.7 dB up -
+        /// on a take that was being limited. Before that it was 0.21, which came from the
+        /// emulation measuring itself and is the reason this whole rig exists.
+        ///
+        /// Run 20 walked it: eleven rungs from -50 to +50, the section held 17 dB down by a
+        /// velocity trim every keygroup in it shares, so even +50 was clear of the ceiling.
+        /// Ten read, and they are a straight line to 0.21 dB:
+        ///
+        ///     stored   -40    -30    -20    -10      0     10     20     30     40     50
+        ///     dB     -36.0  -31.9  -27.9  -23.9  -19.7  -15.7  -11.7   -7.8   -3.8    0.0
+        ///
+        /// 0.401 dB per unit. The old value was 38% low, on 1183 of 1908 library keygroups.
+        ///
+        /// AND IT IS 0.4 - the third place that number has appeared. The sustain plateau
+        /// counts in 0.4 dB steps and so does the positional crossfade, both measured
+        /// independently on different runs. The machine has one internal decibel step.
+        public const double LoudnessDbPerUnit = 0.401;
 
         /// <summary>Measured, at velToLoudness 99.</summary>
         /// MEASURED DIRECTLY IN RUN 19, at a depth of 40 where every velocity stays well
@@ -705,8 +737,16 @@ namespace AkaiS950Engine
         /// full-level voices overflow its output and it saturates. 17 library pairs are
         /// this, the ARP2600 layers, and they have been playing 3.7 dB too quiet apiece.
         ///
-        /// A step of 0.4 dB is still possible and would need a disk that trims both
-        /// keygroups down at source, so the machine is not saturating while it is read.
+        /// MEASURED DIRECTLY IN RUN 20, and it is zero to the tenth of a decibel. That run
+        /// put both keygroups AND both solo references on a zone loudness of -40, which is
+        /// 16 dB of headroom, so the machine had nothing to saturate against:
+        ///
+        ///                  in the layer   sounding alone   difference
+        ///     1000 Hz          -19.7           -19.7          0.0 dB
+        ///     2200 Hz           -0.0             0.0          0.0 dB
+        ///
+        /// None of its three layered clips came near the ceiling, where every one of run
+        /// 15's five had. The step that could not be ruled out is ruled out.
         /// </summary>
         public const double XfadeSameRangeDb = 0.0;
 

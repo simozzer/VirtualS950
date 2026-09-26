@@ -2640,11 +2640,11 @@ namespace reference
     inline constexpr double KeyFull              = 50;
     inline constexpr double VelOctaves           = 8.34;
     inline constexpr double VelPivot             = 65;
-    inline constexpr double EnvOctaves           = 8.5;
+    inline constexpr double EnvOctaves           = 8.3;
     inline constexpr double VcaAttackSpan        = 5.4;
     inline constexpr double VcfTimeScale         = 0.78;
     inline constexpr double SustainDb            = 39.6;
-    inline constexpr double LoudnessDbPerUnit    = 0.29;
+    inline constexpr double LoudnessDbPerUnit    = 0.401;
     inline constexpr double VelDbPerStep         = 0.642;
     inline constexpr double LfoDepthCentsPerUnit = 1.527;
     inline constexpr double LfoWheelCentsAtFull  = 72.3;

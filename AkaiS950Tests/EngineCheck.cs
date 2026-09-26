@@ -133,9 +133,11 @@ static class EngineCheck
               Near(Cal.DbToGain(-(1 - 50 / 99.0) * Cal.SustainDb), 0.104713, 0.00002),
               F(Cal.DbToGain(-(1 - 50 / 99.0) * Cal.SustainDb), 6) + ", audio.js says 0.104713");
 
-        Check("zone loudness +20 is 5.8 dB up",
-              Near(Cal.DbToGain(20 * Cal.LoudnessDbPerUnit), 1.949845, 0.00002),
-              F(Cal.DbToGain(20 * Cal.LoudnessDbPerUnit), 6) + ", audio.js says 1.949845");
+        // 8.0 dB, not the 5.8 this pinned before run 20 walked the whole ladder and found
+        // 0.401 dB a unit where one reading on a limited take had said 0.29.
+        Check("zone loudness +20 is 8.0 dB up",
+              Near(Cal.DbToGain(20 * Cal.LoudnessDbPerUnit), 2.517677, 0.00002),
+              F(Cal.DbToGain(20 * Cal.LoudnessDbPerUnit), 6) + ", audio.js says 2.517677");
 
         // ------------------------------------------------------------ the renderer
 

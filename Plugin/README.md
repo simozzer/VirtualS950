@@ -252,10 +252,45 @@ and an editor worth looking at — are all done. What is left is measurement, no
    Still open: **0 to 15**. The fall at stored 15 is over in nine milliseconds, as short as an
    rms window can time. Reaching below it wants the amplitude tracked by Goertzel on a tone —
    a different rig, and a small span: the measured endpoint at stored 0 brackets it.
-2. **`EnvOctaves` is probably 8.5 when it should be nearer 7.8.** Two independent readings
-   from the fifth calibration run say so: the static corners of a negative-amount clip, and
-   the travel of a full-depth release. Neither was the run's purpose, so neither is clean
-   enough to change a constant on.
+2. **Done — `EnvOctaves` is 8.3, and it was never 7.8.** Run 20 repeated run 1's static-corner
+   measurement on a clean take, six amounts each way, and landed where run 1 had:
+
+   | | run 1 | run 20 |
+   |---|---|---|
+   | opening | 8.37 | 8.39 |
+   | closing | 8.28 | 8.20 |
+
+   The 8.5 that sat here matched neither, and matched no reading in its own comment — a value
+   the evidence had quietly outgrown. Run 5's 7.7 and 7.56 are the ones to discard: they came
+   from a sweep that hit a stop, exactly what the note of the day warned about. Rendering the
+   same disk through the model returns 8.51 against the 8.5 that went in, so the method is
+   unbiased to 0.03 and the 2.4% correction is real.
+
+   One thing left unmodelled: the two directions are not quite equal. Run 20 puts closing at
+   0.978 of opening where the render gives 0.999, so that 2% asymmetry is the machine.
+
+2b. **Done — `LoudnessDbPerUnit` is 0.401, not 0.29.** It rested on a single stored +20 that
+   read 5.7 dB up, on a limited take; before that it was 0.21, from the emulation measuring
+   itself. Run 20 walked eleven rungs from −50 to +50 with the whole section held 17 dB down
+   by a shared velocity trim, so nothing saturated. Ten read, on a straight line to 0.21 dB,
+   at **0.401 dB per unit** — 38% above the old value, on 1183 of the 1908 library keygroups.
+
+   And it is 0.4 again: the sustain plateau and the positional crossfade both count in 0.4 dB
+   steps, measured independently on different runs. **The machine has one internal decibel
+   step and this is it.**
+
+2c. **`VcfTimeScale` = 0.78 is still one measurement, and run 20 says it is too big.** Run 20
+   read both clocks at five settings in one take — the amplitude release as a level and the
+   filter release as a corner. The amplitude side agrees with run 19 to 1.7%, so the take is
+   sound. The filter side comes out at 0.74 of the same disk rendered through the model,
+   which would put the true scale near **0.58**.
+
+   Not applied, because the four probes inside each clip disagree by up to **3.4×**, growing
+   with the setting — the note is dying away under a stored-80 amplitude release while the
+   corner is being followed, so the highest probes are read when there is least left to read.
+   A future run wants the amplitude release long and the filter release measured against a
+   steady level, not a falling one. The direction is worth more than the number: the filter's
+   envelope runs faster than the model has it, on every filtered programme in the library.
 2a. **Done — a sustain of 0 is silence, and the decay is a rate.** This used to read "a decay
    bottoms out 39.6 dB down where the hardware falls at least 77", and it mattered more than
    anything else on the list: **1907 of the 1908 library keygroups set a decay and 723 decay
