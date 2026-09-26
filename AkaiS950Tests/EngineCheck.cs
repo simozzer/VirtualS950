@@ -60,7 +60,17 @@ static class EngineCheck
         CheckEnv(0, 0.010400);
         CheckEnv(20, 0.031660);
         CheckEnv(25, 0.041820);
-        CheckEnv(50, 0.306970);
+        CheckEnv(50, 0.303820);
+
+        // The low bit of the byte is ignored - run 23 read every value from 45 to 56 and
+        // found the pairs identical. 51 must play what 50 plays, not something between 50
+        // and 52, which is what the table used to interpolate.
+        CheckEnv(51, 0.303820);
+        CheckEnv(47, 0.221760);
+        Check("odd envelope settings play the even one below, not an interpolation",
+              Near(Cal.EnvSeconds(53), Cal.EnvSeconds(52), 1e-12) &&
+              !Near(Cal.EnvSeconds(53), Cal.EnvSeconds(54), 1e-6),
+              F(Cal.EnvSeconds(53), 6) + " against 52's " + F(Cal.EnvSeconds(52), 6));
         CheckEnv(70, 1.403700);
         CheckEnv(80, 2.813600);
         CheckEnv(90, 4.117200);
@@ -88,8 +98,12 @@ static class EngineCheck
         // The VCA attack is a counter, not a curve: 5.4/n for whole n. These are the measured
         // settings, and the pairs that share an n are the point - 70 and 75, 80 and 85, and
         // 90 through 99, all of which the hardware returns identical.
-        CheckAttack(30, 5.4 / 26);
-        CheckAttack(40, 5.4 / 15);
+        // 24 and 14, not 26 and 15: run 23 set the byte directly where the table had
+        // reached these sideways through the velocity rule.
+        CheckAttack(8, 5.4 / 300);
+        CheckAttack(20, 5.4 / 56);
+        CheckAttack(30, 5.4 / 24);
+        CheckAttack(40, 5.4 / 14);
         CheckAttack(50, 5.4 / 9);
         CheckAttack(60, 5.4 / 6);
         CheckAttack(70, 5.4 / 4);

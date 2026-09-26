@@ -195,11 +195,12 @@ namespace AkaiS950Engine
         /// window can time.
         public static readonly double[,] EnvTime =
         {
-            {  0, 0.01040 }, { 15, 0.01963 }, { 20, 0.03166 }, { 25, 0.04182 },
-            { 30, 0.06582 }, { 35, 0.08949 }, { 40, 0.14385 }, { 45, 0.19504 },
-            { 50, 0.30697 }, { 55, 0.41063 }, { 60, 0.7224 }, { 65, 0.8806 },
-            { 70, 1.4037 }, { 80, 2.8136 }, { 85, 4.0370 }, { 90, 4.1172 },
-            { 95, 8.0947 }, { 99, 10.7401 }
+            {  0, 0.01040 }, { 14, 0.01963 }, { 20, 0.03166 }, { 24, 0.04182 },
+            { 30, 0.06582 }, { 34, 0.08949 }, { 40, 0.14385 }, { 44, 0.19256 },
+            { 46, 0.22176 }, { 48, 0.25978 }, { 50, 0.30382 }, { 52, 0.35023 },
+            { 54, 0.41004 }, { 56, 0.47807 },
+            { 60, 0.7224 }, { 64, 0.8806 }, { 70, 1.4037 }, { 80, 2.8136 },
+            { 84, 4.0370 }, { 90, 4.1172 }, { 94, 8.0947 }, { 98, 10.7401 }
         };
 
         /// <summary>
@@ -284,9 +285,30 @@ namespace AkaiS950Engine
         /// </summary>
         public static readonly double[,] VcaAttackSteps =
         {
-            {  0, 7000 }, {  8, 270 }, { 20, 55 },
-            { 30,   26 }, { 40,  15 }, { 50, 9 }, { 55, 7 }, { 60, 6 }, { 65, 5 },
-            { 70,    4 }, { 75,   4 }, { 80, 3 }, { 85, 3 }, { 90, 2 }, { 95, 2 }, { 99, 2 }
+            /*
+             * RUN 23 WALKED THE BOTTOM OF THIS LADDER BY SETTING THE BYTE.
+             *
+             * It had two points below stored 30 - 8 and 20 - and BOTH were reached
+             * sideways, by setting a base attack of 70 and using byte 9 to pull the
+             * effective value down. Twelve settings measured directly, and the counter
+             * law holds all the way down:
+             *
+             *     stored     8    10    12    15    18    20    22    25    28    30    35    40
+             *     seconds .018  .026  .038  .058  .079  .097  .120  .154  .194  .227  .311  .392
+             *     5.4/n    300   208   142    93    68    56    45    35    28    24    17    14
+             *
+             * Every one within 2% of 5.4 over a whole number, most within 0.6%. Stored 20
+             * was right at 56 against the table's 55; stored 8 was 11% out, 300 against
+             * 270 - which is the one the note warned about, a value reached through
+             * another rule carrying that rule's error.
+             *
+             * Stored 0 stays 7000 and stays a guess: extrapolating downward puts it near
+             * 0.8 ms, under a sample at 44.1 kHz, and nothing can tell that from instant.
+             */
+            {  0, 7000 }, {  8, 300 }, { 10, 208 }, { 12, 142 }, { 15, 93 }, { 18, 68 },
+            { 20,   56 }, { 22,  45 }, { 25,  35 }, { 28,  28 }, { 30, 24 }, { 35, 17 },
+            { 40,   14 }, { 50,   9 }, { 55,   7 }, { 60,   6 }, { 65,  5 },
+            { 70,    4 }, { 75,   4 }, { 80,   3 }, { 85,   3 }, { 90,  2 }, { 95, 2 }, { 99, 2 }
         };
 
         /// <summary>Measured: 2.25 s against the VCA's 2.86.</summary>
@@ -989,7 +1011,18 @@ namespace AkaiS950Engine
         /// </summary>
         public static double EnvSeconds(double stored)
         {
-            double v = Clamp(stored, 0, 99);
+            /*
+             * THE LOW BIT IS DROPPED BEFORE ANYTHING ELSE HAPPENS.
+             *
+             * Two stored units share each envelope time - run 23 read every value from 45
+             * to 56 and found (46,47), (48,49), (50,51), (52,53) and (54,55) identical to
+             * better than half a per cent, against fifteen per cent between the pairs.
+             * See EnvTime.
+             *
+             * A floor and not a round, because the pairs run even-then-odd: 47 plays what
+             * 46 plays, not what 48 plays.
+             */
+            double v = Math.Floor(Clamp(stored, 0, 99) / 2) * 2;
             int n = EnvTime.GetLength(0);
             double seconds = EnvTime[n - 1, 1];
 
