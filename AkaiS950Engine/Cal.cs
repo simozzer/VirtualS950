@@ -290,7 +290,26 @@ namespace AkaiS950Engine
         };
 
         /// <summary>Measured: 2.25 s against the VCA's 2.86.</summary>
-        public const double VcfTimeScale = 0.78;
+        /// MEASURED PROPERLY IN RUN 21, where it had been one filter decay set against one
+        /// amplitude decay from a different run.
+        ///
+        /// Run 20 tried and could not: it watched the filter's RELEASE, which only happens
+        /// after the key comes up - and the amplitude is released at the same moment, so
+        /// the note was dying at 15 dB a second underneath the measurement. The probes
+        /// inside each clip disagreed by up to 3.4x, growing with the setting, which is
+        /// that fault rather than the filter.
+        ///
+        /// Run 21 watched the filter's DECAY instead. A decay happens while the key is
+        /// still down, so the amplitude could be held dead flat and the corner followed
+        /// against a level that does not move. Six settings, each read against the same
+        /// disk rendered through this model so the measurement's own lag cancels:
+        ///
+        ///     stored          50     55     60     65     70     75
+        ///     hardware/render 0.94   1.00   0.85   0.98   0.98   0.86
+        ///     implied scale   0.68   0.78   0.63   0.76   0.76   0.66
+        ///
+        /// 0.71, spread 0.06. Run 20's 0.58 was mostly the droop.
+        public const double VcfTimeScale = 0.71;
 
         /// <summary>
         /// THE RELEASE IS A RATE, NOT A DURATION.
@@ -403,6 +422,32 @@ namespace AkaiS950Engine
         public static double VcaDecaySeconds(double stored, double sustainDb)
         {
             return EnvSeconds(stored) * (-sustainDb) / VcaReleaseDb;
+        }
+
+        /// <summary>
+        /// THE FILTER'S DECAY IS A RATE TOO, so its length scales with how far it has to go.
+        /// `sustain` is the envelope's resting fraction, 0 to 1, so 1 - sustain is the share
+        /// of the full depth this decay has to cover.
+        ///
+        /// Run 19 found this for the amplitude. The filter's was left as a DURATION because
+        /// that is how it was written before anybody measured either, and run 21 asked it
+        /// properly: one decay setting, four depths, with the amplitude held dead flat so
+        /// the corner could be followed against a level that does not move.
+        ///
+        ///     octaves travelled   1.97   1.34   0.65
+        ///     seconds             0.82   0.66   0.51
+        ///
+        /// A duration is a flat line through those. They fit time = 0.354 + 0.235 x octaves
+        /// to within 0.008 s, and the same disk rendered through the old model - which WAS a
+        /// duration - comes back with a slope of -0.038. The intercept is the method's own
+        /// lag; the slope is the filter.
+        ///
+        /// So both envelopes are rates and the machine has one generator, which is what
+        /// VcfTimeScale being a plain ratio always implied.
+        /// </summary>
+        public static double VcfDecaySeconds(double stored, double sustain)
+        {
+            return EnvSeconds(stored) * VcfTimeScale * (1.0 - Clamp(sustain, 0, 1));
         }
 
         /*

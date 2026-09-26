@@ -175,9 +175,9 @@ namespace s950
 
         vcfAttack  = cal::envSeconds (cal::clamp (baseAttack + trims.vcfAttack, 0.0, 99.0))
                    * cal::VcfTimeScale;
-        vcfDecay   = cal::envSeconds (cal::clamp (baseDecay + trims.vcfDecay, 0.0, 99.0))
-                   * cal::VcfTimeScale;
         vcfSustain = cal::clamp (baseSustain + trims.vcfSustain, 0.0, 99.0) / 99.0;
+        vcfDecay   = cal::vcfDecaySeconds (cal::clamp (baseDecay + trims.vcfDecay, 0.0, 99.0),
+                                          vcfSustain);
         vcfRelease = cal::envSeconds (cal::clamp (baseRelease + trims.vcfRelease, 0.0, 99.0))
                    * cal::VcfTimeScale;
 

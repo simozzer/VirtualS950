@@ -279,18 +279,34 @@ and an editor worth looking at — are all done. What is left is measurement, no
    steps, measured independently on different runs. **The machine has one internal decibel
    step and this is it.**
 
-2c. **`VcfTimeScale` = 0.78 is still one measurement, and run 20 says it is too big.** Run 20
-   read both clocks at five settings in one take — the amplitude release as a level and the
-   filter release as a corner. The amplitude side agrees with run 19 to 1.7%, so the take is
-   sound. The filter side comes out at 0.74 of the same disk rendered through the model,
-   which would put the true scale near **0.58**.
+2c. **Done — `VcfTimeScale` is 0.71, and the filter's decay is a rate.** Run 20 could not
+   settle this: it watched the filter's *release*, which only happens after the key comes up,
+   and the amplitude is released at the same moment — so the note was dying at 15 dB a second
+   underneath the measurement and the probe scatter grew with the setting, up to 3.4×.
 
-   Not applied, because the four probes inside each clip disagree by up to **3.4×**, growing
-   with the setting — the note is dying away under a stored-80 amplitude release while the
-   corner is being followed, so the highest probes are read when there is least left to read.
-   A future run wants the amplitude release long and the filter release measured against a
-   steady level, not a falling one. The direction is worth more than the number: the filter's
-   envelope runs faster than the model has it, on every filtered programme in the library.
+   Run 21 watched the filter's **decay** instead, which happens while the key is still down,
+   with the amplitude held dead flat. Six settings, each read against the same disk rendered
+   through the model so the method's own lag cancels: **0.71, spread 0.06**. Run 20's 0.58 was
+   mostly the droop.
+
+   **And the decay turned out to be a rate, not a duration** — the same shape the amplitude's
+   has. One decay setting, four depths for it to cover:
+
+   ```
+   octaves travelled   1.97   1.34   0.65
+   seconds             0.82   0.66   0.51
+   ```
+
+   A duration is a flat line through those. They fit `time = 0.354 + 0.235 × octaves` to
+   within 0.008 s, where the same disk rendered through the old duration model gives a slope
+   of −0.038. The intercept is the method's lag; the slope is the filter. So both envelopes
+   are rates and the machine has one generator — which is what `VcfTimeScale` being a plain
+   ratio always implied.
+
+   Two things run 21 also ruled out, both of which every filter run before it had held fixed:
+   the **starting cutoff** does not matter (three bases two octaves apart, flat to 3%), and
+   neither does the **direction** (a negative amount takes the same time as a positive one,
+   to 6%). So the envelope really is octaves per second, not a count in cutoff-code units.
 2a. **Done — a sustain of 0 is silence, and the decay is a rate.** This used to read "a decay
    bottoms out 39.6 dB down where the hardware falls at least 77", and it mattered more than
    anything else on the list: **1907 of the 1908 library keygroups set a decay and 723 decay

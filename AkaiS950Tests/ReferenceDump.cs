@@ -233,6 +233,27 @@ static class ReferenceDump
         s.AppendLine("    };");
         s.AppendLine();
 
+        /*
+         * The filter's decay, which run 21 found to be a rate rather than a duration.
+         *
+         * Sustain 99 is in the grid and is the point of it: there the decay has nowhere to
+         * go, so a rate takes no time at all and a duration takes the full envelope time.
+         * A port still carrying the old rule matches at sustain 0 and nowhere else.
+         */
+        s.AppendLine("    // vcfDecaySeconds (stored, sustain 0..1) -> how long the filter decay takes");
+        s.AppendLine("    struct VcfDecayCase { int stored, sustain; double seconds; };");
+        s.AppendLine();
+        s.AppendLine("    inline constexpr VcfDecayCase vcfDecays[] =");
+        s.AppendLine("    {");
+
+        foreach (int dec in new[] { 0, 20, 40, 50, 65, 70, 85, 99 })
+            foreach (int sus in new[] { 0, 10, 25, 50, 75, 90, 99 })
+                s.AppendLine("        { " + dec + ", " + sus + ", " +
+                             F(Cal.VcfDecaySeconds(dec, sus / 99.0)) + " },");
+
+        s.AppendLine("    };");
+        s.AppendLine();
+
         // ------------------------------------------------- the positional crossfade
 
         /*

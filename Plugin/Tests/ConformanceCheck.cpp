@@ -160,6 +160,19 @@ namespace
                   d.seconds, 1e-9);
         }
 
+        std::printf ("\n  the filter decay, %d combinations\n",
+                     static_cast<int> (std::size (reference::vcfDecays)));
+
+        for (const auto& d : reference::vcfDecays)
+        {
+            char what[96];
+            std::snprintf (what, sizeof (what), "VCF decay %d to sustain %d",
+                           d.stored, d.sustain);
+            same (what,
+                  s950::cal::vcfDecaySeconds (d.stored, d.sustain / 99.0),
+                  d.seconds, 1e-9);
+        }
+
         std::printf ("\n  the positional crossfade table, %d points\n",
                      static_cast<int> (std::size (reference::xfadePoints)));
 
