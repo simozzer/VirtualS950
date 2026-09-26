@@ -135,6 +135,12 @@ namespace AkaiS950Engine
         public readonly List<KeygroupPatch> Keygroups = new List<KeygroupPatch>();
 
         /// <summary>
+        /// Program header byte 21: fade overlapping keygroups into one another rather than
+        /// sounding both at full level. See Cal.XfadeDb.
+        /// </summary>
+        public bool PositionalCrossfade;
+
+        /// <summary>
         /// Every entry this note and velocity should sound.
         ///
         /// Plural on purpose, but for one reason only: overlapping KEYGROUPS do layer, and

@@ -193,6 +193,90 @@ static class ReferenceDump
         s.AppendLine("    };");
         s.AppendLine();
 
+        // ------------------------------------------------- the positional crossfade
+
+        /*
+         * The table read straight, then the rule that uses it.
+         *
+         * The widths here are the seven that were measured plus 4, 7 and 25 that were not -
+         * a port that hard-codes the measured widths and interpolates wrongly between them
+         * passes on the first seven and fails on the others.
+         *
+         * THE THREE-DEEP STACK IS RUN 15'S, key for key. It is the only case where the two
+         * plausible rules - multiply the pairwise fades, or take the deepest single one -
+         * give different answers, so it is the one that pins the port to the same rule.
+         *
+         * The identical-range pair is here because it is the case that looks like an
+         * overlap and is not: two keygroups on the same keys sit 3.7 dB down apiece and do
+         * not fade across the range at all.
+         */
+        s.AppendLine("    // crossfadeDb (x) -> attenuation in decibels");
+        s.AppendLine("    struct XfadePoint { double x, db; };");
+        s.AppendLine();
+        s.AppendLine("    inline constexpr XfadePoint xfadePoints[] =");
+        s.AppendLine("    {");
+
+        for (int step = 0; step <= 200; step++)
+        {
+            double x = step / 200.0;
+            s.AppendLine("        { " + F(x) + ", " + F(Cal.CrossfadeDb(x)) + " },");
+        }
+
+        s.AppendLine("    };");
+        s.AppendLine();
+
+        s.AppendLine("    // crossfadeGain -> one keygroup's linear gain among those answering a note");
+        s.AppendLine("    struct XfadeCase { int note, count; int lows[4], highs[4]; " +
+                     "int self; double gain; };");
+        s.AppendLine();
+        s.AppendLine("    inline constexpr XfadeCase xfades[] =");
+        s.AppendLine("    {");
+
+        // Two keygroups staggered by `width` keys, played across the whole overlap and a
+        // key either side of it where only one of them answers.
+        foreach (int width in new[] { 1, 2, 3, 4, 5, 7, 9, 13, 21, 25 })
+        {
+            int aLow = 40, aHigh = 40 + 20;
+            int bLow = aHigh - width + 1, bHigh = bLow + 20;
+
+            for (int note = aLow; note <= bHigh; note++)
+            {
+                bool inA = note >= aLow && note <= aHigh;
+                bool inB = note >= bLow && note <= bHigh;
+                if (!inA && !inB) continue;
+
+                int[] lows = { aLow, bLow, 0, 0 }, highs = { aHigh, bHigh, 0, 0 };
+
+                for (int self = 0; self < 2; self++)
+                    s.AppendLine("        { " + note + ", 2, { " + aLow + ", " + bLow +
+                                 ", 0, 0 }, { " + aHigh + ", " + bHigh + ", 0, 0 }, " +
+                                 self + ", " +
+                                 F(Cal.CrossfadeGain(note, lows, highs, 2, self)) + " },");
+            }
+        }
+
+        // Run 15's three-deep stack, and its identical-range pair.
+        {
+            int[] lows = { 100, 104, 108, 0 }, highs = { 112, 116, 120, 0 };
+
+            for (int note = 100; note <= 120; note++)
+                for (int self = 0; self < 3; self++)
+                    s.AppendLine("        { " + note + ", 3, { 100, 104, 108, 0 }, " +
+                                 "{ 112, 116, 120, 0 }, " + self + ", " +
+                                 F(Cal.CrossfadeGain(note, lows, highs, 3, self)) + " },");
+
+            int[] sLow = { 20, 20, 0, 0 }, sHigh = { 32, 32, 0, 0 };
+
+            for (int note = 20; note <= 32; note++)
+                for (int self = 0; self < 2; self++)
+                    s.AppendLine("        { " + note + ", 2, { 20, 20, 0, 0 }, " +
+                                 "{ 32, 32, 0, 0 }, " + self + ", " +
+                                 F(Cal.CrossfadeGain(note, sLow, sHigh, 2, self)) + " },");
+        }
+
+        s.AppendLine("    };");
+        s.AppendLine();
+
         // -------------------------------------------------------------------- the LFO
 
         s.AppendLine("    // the LFO rate in hertz, from the stored byte");

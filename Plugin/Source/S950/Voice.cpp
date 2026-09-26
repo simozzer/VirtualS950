@@ -3,8 +3,9 @@
 namespace s950
 {
     void Voice::start (const KeygroupPatch& group, int n, int vel,
-                       double rate, double wheel, long long sequence)
+                       double rate, double wheel, long long sequence, double fade)
     {
+        crossfade     = fade;
         kg            = &group;
         sound         = group.sound;
         note          = n;
@@ -38,7 +39,7 @@ namespace s950
         const double velDb  = -(127.0 - velocity) * cal::VelDbPerStep * depth;
         const double zoneDb = group.zoneLoudness * cal::LoudnessDbPerUnit;
 
-        peak = std::min (cal::dbToGain (velDb + zoneDb), 4.0);
+        peak = std::min (cal::dbToGain (velDb + zoneDb), 4.0) * crossfade;
 
         // the times and the sustains come from the keygroup and the trims together
         applyTrims();
@@ -101,7 +102,7 @@ namespace s950
         const double velDb  = -(127.0 - velocity) * cal::VelDbPerStep * depth;
         const double zoneDb = group.zoneLoudness * cal::LoudnessDbPerUnit;
 
-        peak = std::min (cal::dbToGain (velDb + zoneDb), 4.0);
+        peak = std::min (cal::dbToGain (velDb + zoneDb), 4.0) * crossfade;
         applyTrims();
 
         // --- filter

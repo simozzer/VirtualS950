@@ -144,6 +144,12 @@ namespace s950
         std::vector<KeygroupPatch> keygroups;
 
         /*
+         * Program header byte 21: fade overlapping keygroups into one another rather than
+         * sounding both at full level. See cal::XfadeDb.
+         */
+        bool positionalCrossfade = false;
+
+        /*
          * Every entry this note and velocity should sound.
          *
          * Plural on purpose, but for one reason only: overlapping KEYGROUPS do layer, and

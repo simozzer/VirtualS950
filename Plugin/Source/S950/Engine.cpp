@@ -195,8 +195,34 @@ namespace s950
 
         audioPatch->matching (note, velocity, matched);
 
+        /*
+         * The positional crossfade needs every keygroup answering this note at once, so the
+         * ranges are gathered before any voice starts. With the flag off, or with one
+         * keygroup answering, crossfadeGain returns 1 and nothing below changes.
+         *
+         * Fixed arrays rather than a vector: this is the audio thread, and one note can
+         * start no more voices than the polyphony allows.
+         */
+        int fadeLow[Polyphony], fadeHigh[Polyphony];
+        const int fadeCount = std::min (static_cast<int> (matched.size()), Polyphony);
+
+        for (int m = 0; m < fadeCount; ++m)
+        {
+            fadeLow[m]  = matched[static_cast<size_t> (m)]->lowKey;
+            fadeHigh[m] = matched[static_cast<size_t> (m)]->highKey;
+        }
+
+        int index = -1;
+
         for (const KeygroupPatch* kg : matched)
         {
+            ++index;
+
+            const double fade = (audioPatch->positionalCrossfade && index < fadeCount)
+                                  ? cal::crossfadeGain (note, fadeLow, fadeHigh,
+                                                        fadeCount, index)
+                                  : 1.0;
+
             // What the wheel adds, in cents. Byte 22 scales it, proportionally - the machine
             // gave 0.509 of full at byte 22 = 50, where proportional is 0.505.
             double wheelCents = cal::LfoWheelCentsAtFull
@@ -214,7 +240,7 @@ namespace s950
              */
             Voice& v = take();
             v.setTrims (trims.read());
-            v.start (*kg, note, velocity, sampleRate, wheelCents, sequence++);
+            v.start (*kg, note, velocity, sampleRate, wheelCents, sequence++, fade);
         }
     }
 

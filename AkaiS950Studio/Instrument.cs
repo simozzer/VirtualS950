@@ -266,6 +266,12 @@ namespace AkaiS950Studio
             var patch = new Patch { Name = program.Name.Trim() };
             var groups = disk.Keygroups(program);
 
+            // Program header byte 21: fade overlapping keygroups rather than sounding both
+            // at full level. 48 library programmes set it and overlap, and they are the
+            // multi-sampled instruments - the pianos above all.
+            AkaiDisk.ProgramHeader head = disk.ReadProgramHeader(program);
+            patch.PositionalCrossfade = head != null && head.PositionalCrossfade;
+
             for (int i = 0; i < groups.Count; i++)
             {
                 AkaiDisk.Keygroup kg = groups[i];

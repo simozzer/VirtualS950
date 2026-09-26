@@ -390,6 +390,73 @@ namespace s950::cal
     /// Measured, at velToLoudness 99.
     inline constexpr double VelDbPerStep = 0.63;
 
+    // ----------------------------------------------------- the positional crossfade
+
+    /*
+     * How far the crossfade pulls a keygroup down, against where the key sits in the overlap
+     * it shares with another. Program header byte 21 turns it on.
+     *
+     * 48 of the 390 library programmes set it AND have overlapping keygroups, and they are
+     * the multi-sampled instruments: GRAND-PNO1 and 2 with nine keygroups apiece, GRANDX,
+     * CB CEL VL. Every engine here used to sound both keygroups at full level - about 6 dB
+     * too loud, with two different recordings of one note beating against each other.
+     *
+     * WHERE A KEY SITS IN AN OVERLAP
+     *
+     *     x = (i + 1) / (N + 1)     i the 0-based key within the overlap, N its width
+     *
+     * The lower keygroup reads the table at x and the upper at 1 - x; run 17 read both tones
+     * at every key and they mirror. The ends are what make this right rather than the
+     * obvious i/(N-1): seven widths from 1 key to 21 were measured, and wherever two land on
+     * the same x they agree to 0.1 dB - x = 0.14 reads -0.4 at widths 13 and 21, x = 0.67
+     * reads -8.7 at widths 2, 5 and 21. And a ONE-KEY overlap, which 13 library pairs have,
+     * sits at x = 1/2 and splits evenly at -4.5 dB, where i/(N-1) divides by zero.
+     *
+     * A TABLE RATHER THAN A CURVE. cos(pi x / 2) ^ 1.44 fits to about 0.5 dB rms, close
+     * enough to be tempting, but the measured values arrive in clumps - -0.2 at three
+     * different x, then -0.3, -0.4, -0.6, a jump to -1.2 - which is what a gain LOOKUP does
+     * and not what a curve does. Fitting a smooth function through a quantised one is how
+     * EnvTime came to be 20% wrong in its middle.
+     *
+     * WIDTH 9 DISAGREES AT ITS LAST KEY: x = 0.9 reads -22.2 where width 13 at 0.929 and
+     * width 21 at 0.909 both read -26.2. Nearly 3 dB, against the 0.1 the rest agree to, and
+     * the only place they part. Both points are kept, so every measured width reproduces
+     * itself exactly and the disagreement is confined to widths nobody has played.
+     *
+     * x = 0 and x = 1 are extrapolations, reached only by overlaps wider than 21 keys: x
+     * lives in [1/(N+1), N/(N+1)] and width 21 already spans 0.045 to 0.955.
+     */
+    struct XfadeStep { double x, db; };
+
+    inline constexpr XfadeStep XfadeDb[] =
+    {
+        { 0.00000,   0.00 }, { 0.04545,  -0.20 }, { 0.07143,  -0.20 }, { 0.09091,  -0.20 },
+        { 0.10000,  -0.30 }, { 0.13636,  -0.40 }, { 0.14286,  -0.40 }, { 0.16667,  -0.50 },
+        { 0.20000,  -0.60 }, { 0.21429,  -0.60 }, { 0.25000,  -1.20 }, { 0.30000,  -1.50 },
+        { 0.31818,  -2.00 }, { 0.33333,  -2.00 }, { 0.35714,  -2.25 }, { 0.40000,  -2.60 },
+        { 0.50000,  -4.50 }, { 0.60000,  -7.30 }, { 0.64286,  -7.95 }, { 0.66667,  -8.70 },
+        { 0.68182,  -8.70 }, { 0.70000, -10.25 }, { 0.75000, -11.55 }, { 0.78571, -15.35 },
+        { 0.80000, -15.30 }, { 0.83333, -17.05 }, { 0.85714, -19.15 }, { 0.86364, -19.10 },
+        { 0.90000, -22.25 }, { 0.90909, -26.25 }, { 0.92857, -26.25 }, { 0.95455, -32.75 },
+        { 1.00000, -40.00 }
+    };
+
+    inline constexpr int XfadeCount = static_cast<int> (std::size (XfadeDb));
+
+    /*
+     * TWO KEYGROUPS ON EXACTLY THE SAME KEYS ARE NOT FADED. They sit at a constant 3.7 dB
+     * down apiece, the same at every key across a thirteen-key range, which is what run 15
+     * measured with the crossfade on.
+     *
+     * It is not the table read at some x - it does not move with the key at all, and the
+     * table holds no value that flat. 17 library pairs are exactly this, the ARP2600 layers,
+     * and treating identical ranges as an overlap to fade across would have half-silenced
+     * every one of them.
+     */
+    inline constexpr double XfadeSameRangeDb = -3.7;
+
+    // crossfadeDb and crossfadeGain live further down, after clamp() is declared.
+
     // --------------------------------------------------------------------------- LFO
 
     /*
@@ -614,6 +681,91 @@ namespace s950::cal
         if (cents == 0.0) return 1.0;
 
         return std::pow (2.0, cents * std::exp (-t / warpSeconds (time)) / 1200.0);
+    }
+
+    /*
+     * The crossfade table read at x - straight-line between the measured points and in
+     * decibels, which is the domain the machine turned out to be counting in. See XfadeDb.
+     */
+    inline double crossfadeDb (double x)
+    {
+        const double v = clamp (x, 0.0, 1.0);
+
+        for (int i = 1; i < XfadeCount; ++i)
+        {
+            if (v > XfadeDb[i].x) continue;
+
+            const double span = XfadeDb[i].x - XfadeDb[i - 1].x;
+            const double t = span == 0.0 ? 0.0 : (v - XfadeDb[i - 1].x) / span;
+            return XfadeDb[i - 1].db + t * (XfadeDb[i].db - XfadeDb[i - 1].db);
+        }
+
+        return XfadeDb[XfadeCount - 1].db;
+    }
+
+    /*
+     * What one keygroup should be played at, as a linear gain, given every other keygroup
+     * answering the same note. `lows` and `highs` hold one entry per keygroup answering, in
+     * programme order; `self` picks which one the gain is for.
+     *
+     * PAIRWISE, AND THE DECIBELS ADD. A keygroup overlapping two neighbours is faded against
+     * each and the attenuations multiply. Run 15 measured a three-deep stack - keygroups at
+     * 100-112, 104-116 and 108-120 - and that is what fits:
+     *
+     *     key 110    T1      T2      T3
+     *     measured  -12.2    -1.8   -12.7
+     *     product   -14.8    -3.0   -14.8
+     *     deepest   -10.3    -1.5   -10.3
+     *
+     * Neither is exact and the product runs about 2 dB deep through the middle, but the ends
+     * decide it. At key 112 the product puts the bottom keygroup near -39 and the
+     * deepest-single rule puts it at -22; it measured -33, below the -30 where a tone that
+     * is not sounding at all reads in these takes. A reading at the floor is consistent with
+     * -39 and rules out -22.
+     *
+     * So: the product, exact where two keygroups overlap - the ordinary case, and the only
+     * one the library's pianos use - and about 2 dB of slack where three do.
+     */
+    inline double crossfadeGain (int note, const int* lows, const int* highs,
+                                 int count, int self)
+    {
+        if (lows == nullptr || highs == nullptr || self < 0 || self >= count) return 1.0;
+
+        const int low  = lows[self]  < highs[self] ? lows[self]  : highs[self];
+        const int high = lows[self]  < highs[self] ? highs[self] : lows[self];
+        if (note < low || note > high) return 1.0;
+
+        double db = 0.0;
+
+        for (int i = 0; i < count; ++i)
+        {
+            if (i == self) continue;
+
+            const int oLow  = lows[i] < highs[i] ? lows[i]  : highs[i];
+            const int oHigh = lows[i] < highs[i] ? highs[i] : lows[i];
+
+            // A keygroup that does not answer this note is not fading it. Skipped rather
+            // than clamped into the overlap: clamping turns a caller's mistake into a
+            // plausible-looking attenuation.
+            if (note < oLow || note > oHigh) continue;
+
+            if (oLow == low && oHigh == high) { db += XfadeSameRangeDb; continue; }
+
+            const int lo = low  > oLow  ? low  : oLow;
+            const int hi = high < oHigh ? high : oHigh;
+            if (hi < lo) continue;
+
+            const int width = hi - lo + 1;
+            const double x = (note - lo + 1) / static_cast<double> (width + 1);
+
+            // The one that starts lower fades OUT going up. Where they start together the
+            // one that ends lower does - which run 17 never played and no library programme
+            // yet seen needs, so it is a choice rather than a reading.
+            const bool lower = low < oLow || (low == oLow && high < oHigh);
+            db += crossfadeDb (lower ? x : 1.0 - x);
+        }
+
+        return std::pow (10.0, db / 20.0);
     }
 
     /*

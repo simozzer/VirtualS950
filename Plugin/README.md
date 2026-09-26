@@ -193,14 +193,29 @@ Two places where it could not stay identical, both in `Engine`:
 The three things that were listed here — reading disks, saving the image into the project,
 and an editor worth looking at — are all done. What is left is measurement, not code:
 
-0. **Positional crossfade is not modelled, and overlapping keygroups play at full level.**
-   Program header byte 21. **48 of the 390 library programmes have it on and have keygroups
-   whose key ranges overlap** — and they are the multi-sampled instruments, GRAND-PNO1 and 2
-   with nine keygroups apiece, GRANDX, CB CEL VL. Where the hardware fades one sample into the
-   next across the overlap, all three engines sound both at full level: about 6 dB too loud
-   there, and two different recordings of the same note beating against each other. Likely to
-   be the first thing anyone notices when comparing a real piano programme against the plugin,
-   and nothing here has measured the shape of the fade.
+0. **Positional crossfade is modelled now** — runs 15 and 17 measured it and all three engines
+   apply it. Program header byte 21; 48 of the 390 library programmes have it on with
+   overlapping keygroups, and they are the multi-sampled instruments, GRAND-PNO1 and 2 with
+   nine keygroups apiece, GRANDX, CB CEL VL. Until this was done they all sounded both
+   keygroups at full level: about 6 dB too loud across the overlap, with two different
+   recordings of one note beating against each other.
+
+   A key's position in the overlap is `x = (i + 1) / (N + 1)`, and the attenuation comes from
+   a measured table rather than a formula — see `Cal.XfadeDb`. Seven overlap widths from 1 key
+   to 21 agree to 0.1 dB wherever two of them land on the same `x`, and the table predicts
+   run 15's seven-key overlap — a width run 17 never played, on another disk in another
+   session — to 0.33 dB rms.
+
+   Three things about it are less than settled:
+
+   - **Width 9 disagrees with widths 13 and 21 at its last key**, −22.2 dB against −26.2 at
+     nearly the same `x`. Both points are in the table, so every measured width reproduces
+     itself, but a width nobody has played could be 3 dB out near the far edge.
+   - **Three-deep overlaps carry about 2 dB of slack.** The pairwise fades multiply, which is
+     what run 15's stack fits; it runs deep through the middle. Two-deep is exact, and that is
+     what the library's pianos use.
+   - **Nobody has measured what byte 21 = 0 does to an overlap.** Both keygroups at full level
+     is the assumption and what the engines do. One section on a future disk settles it.
 1. **`ENV_TIME` is about 20% slow around stored 45.** Run 9 measured the release span as a
    constant 41.0 dB (spread 0.7) at twelve settings from stored 20 to 95 — but the four clips
    landing near stored 45 imply 49.3. Same place, same direction and same size as the

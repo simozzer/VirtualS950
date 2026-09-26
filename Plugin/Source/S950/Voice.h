@@ -59,8 +59,13 @@ namespace s950
         const SoundPtr& getSound() const { return sound; }
 
         /// Start this voice. Nothing here allocates.
+        ///
+        /// `crossfade` is the positional crossfade's gain for this keygroup at this key,
+        /// worked out once by the engine from every keygroup answering the note. See
+        /// cal::crossfadeGain.
         void start (const KeygroupPatch& kg, int note, int velocity,
-                    double sampleRate, double wheelCents, long long sequence);
+                    double sampleRate, double wheelCents, long long sequence,
+                    double crossfade = 1.0);
 
         /*
          * Take up new settings without restarting the note.
@@ -222,6 +227,16 @@ namespace s950
         double t = 0.0;              // seconds since the stage began
         double attack = 0.0, decay = 0.0, releaseTime = 0.0;
         double peak = 1.0, sustain = 1.0;
+
+        /*
+         * The positional crossfade, worked out once when the note started.
+         *
+         * Kept rather than recomputed, and adopt() keeps it too: the fade depends on the key
+         * ranges of the OTHER keygroups answering this note, which a repatch may have moved
+         * under the voice. A voice belongs to the keygroup that started it, and it belongs
+         * to the balance it started in for the same reason.
+         */
+        double crossfade = 1.0;
         double gain = 0.0, releaseFrom = 0.0;
 
         // filter envelope

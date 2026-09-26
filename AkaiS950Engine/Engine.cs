@@ -25,6 +25,12 @@ namespace AkaiS950Engine
         readonly Voice[] _voices = new Voice[Polyphony];
         readonly List<KeygroupPatch> _matched = new List<KeygroupPatch>(8);
 
+        // The key ranges of whatever _matched is holding, so the crossfade can be worked out
+        // without allocating on the audio thread. Sized to the polyphony because that is the
+        // most voices one note can ever start.
+        readonly int[] _matchedLow = new int[Polyphony];
+        readonly int[] _matchedHigh = new int[Polyphony];
+
         // the event ring: written by whoever is playing, read by the audio thread
         struct Event { public byte Kind, A, B; }
         const int RingSize = 256;
@@ -219,10 +225,24 @@ namespace AkaiS950Engine
 
             p.Matching(note, velocity, _matched);
 
+            // The positional crossfade needs every keygroup answering this note at once,
+            // so the ranges are gathered before any voice starts. With the flag off, or
+            // with one keygroup answering, CrossfadeGain returns 1 and nothing changes.
+            int matched = Math.Min(_matched.Count, _matchedLow.Length);
+            for (int m = 0; m < matched; m++)
+            {
+                _matchedLow[m] = _matched[m].LowKey;
+                _matchedHigh[m] = _matched[m].HighKey;
+            }
+
             for (int m = 0; m < _matched.Count; m++)
             {
                 KeygroupPatch kg = _matched[m];
                 if (_startedCount < _started.Length) _started[_startedCount++] = kg.Sound;
+
+                double fade = p.PositionalCrossfade && m < matched
+                    ? Cal.CrossfadeGain(note, _matchedLow, _matchedHigh, matched, m)
+                    : 1.0;
 
                 // What the wheel adds, in cents. Byte 22 scales it, proportionally - the
                 // machine gave 0.509 of full at byte 22 = 50, where proportional is 0.505.
@@ -232,7 +252,7 @@ namespace AkaiS950Engine
                 if (kg.LfoDepth * Cal.LfoDepthCentsPerUnit + wheelCents < 0.5) wheelCents = 0;
 
                 Voice v = Take();
-                v.Start(kg, note, velocity, SampleRate, wheelCents, _sequence++);
+                v.Start(kg, note, velocity, SampleRate, wheelCents, _sequence++, fade);
             }
         }
 

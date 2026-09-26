@@ -138,6 +138,30 @@ namespace
             same (what, s950::cal::bendRatio (b.wheel, b.range), b.ratio, 1e-12);
         }
 
+        std::printf ("\n  the positional crossfade table, %d points\n",
+                     static_cast<int> (std::size (reference::xfadePoints)));
+
+        for (const auto& p : reference::xfadePoints)
+        {
+            char what[80];
+            std::snprintf (what, sizeof (what), "crossfade at x = %.3f", p.x);
+            same (what, s950::cal::crossfadeDb (p.x), p.db, 1e-9);
+        }
+
+        std::printf ("\n  the positional crossfade, %d cases\n",
+                     static_cast<int> (std::size (reference::xfades)));
+
+        for (const auto& x : reference::xfades)
+        {
+            char what[128];
+            std::snprintf (what, sizeof (what),
+                           "crossfade note %d, keygroup %d of %d (%d-%d)",
+                           x.note, x.self, x.count, x.lows[x.self], x.highs[x.self]);
+            same (what,
+                  s950::cal::crossfadeGain (x.note, x.lows, x.highs, x.count, x.self),
+                  x.gain, 1e-12);
+        }
+
         std::printf ("\n  warp, %d combinations\n",
                      static_cast<int> (std::size (reference::warps)));
 

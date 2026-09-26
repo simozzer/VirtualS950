@@ -369,6 +369,14 @@ namespace s950
         auto patch = std::make_shared<Patch>();
         patch->name = program.name;
 
+        // Program header byte 21: fade overlapping keygroups rather than sounding both at
+        // full level. 48 library programmes set it and overlap, and they are the
+        // multi-sampled instruments - the pianos above all.
+        {
+            const auto head = readFile (program);
+            patch->positionalCrossfade = head.size() > 21 && head[21] != 0;
+        }
+
         // One decode per sample, however many keygroups name it.
         std::vector<std::pair<std::string, SoundPtr>> decoded;
 

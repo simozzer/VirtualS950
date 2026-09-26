@@ -59,6 +59,17 @@ namespace AkaiS950Engine
         double _t;                   // seconds since the stage began
         double _attack, _decay, _release;
         double _peak, _sustain;
+
+        /// <summary>
+        /// The positional crossfade, worked out once when the note started. See
+        /// Cal.CrossfadeGain.
+        ///
+        /// Kept rather than recomputed, and Adopt keeps it too: the fade depends on the key
+        /// ranges of the OTHER keygroups answering this note, which a repatch may have moved
+        /// under the voice. A voice belongs to the keygroup that started it, and it belongs
+        /// to the balance it started in for the same reason.
+        /// </summary>
+        double _crossfade = 1.0;
         double _gain, _releaseFrom;
 
         // filter envelope
@@ -115,6 +126,13 @@ namespace AkaiS950Engine
         public void Start(KeygroupPatch kg, int note, int velocity, double sampleRate,
                           double wheelCents, long sequence)
         {
+            Start(kg, note, velocity, sampleRate, wheelCents, sequence, 1.0);
+        }
+
+        public void Start(KeygroupPatch kg, int note, int velocity, double sampleRate,
+                          double wheelCents, long sequence, double crossfade)
+        {
+            _crossfade = crossfade;
             _kg = kg;
             _sound = kg.Sound;
             _note = note;
@@ -145,7 +163,7 @@ namespace AkaiS950Engine
             _release = Cal.EnvSeconds(
                            Cal.VelocityReleaseByte(kg.VcaRelease, kg.VelToRelease,
                                                    _velocity, kg.VelocityReleaseOn));
-            _peak = Math.Min(Cal.DbToGain(velDb + zoneDb), 4.0);
+            _peak = Math.Min(Cal.DbToGain(velDb + zoneDb), 4.0) * _crossfade;
             _sustain = _peak * Cal.DbToGain(sustainDb);
 
             _stage = _attack > 0.0005 ? Stage.Attack : Stage.Decay;
@@ -238,7 +256,7 @@ namespace AkaiS950Engine
             _release = Cal.EnvSeconds(
                            Cal.VelocityReleaseByte(kg.VcaRelease, kg.VelToRelease,
                                                    _velocity, kg.VelocityReleaseOn));
-            _peak = Math.Min(Cal.DbToGain(velDb + zoneDb), 4.0);
+            _peak = Math.Min(Cal.DbToGain(velDb + zoneDb), 4.0) * _crossfade;
             _sustain = _peak * Cal.DbToGain(sustainDb);
 
             // --- filter
