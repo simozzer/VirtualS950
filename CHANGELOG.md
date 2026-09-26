@@ -8,6 +8,146 @@ assumption it says that too — those are the ones another afternoon with a reco
 
 ## Unreleased
 
+## v0.4.0 — 2026-09-26
+
+### Every calibration recording before this release was going through a limiter
+
+This one comes first because it is why several numbers below moved, and because it is the
+kind of mistake that hides inside good-looking data.
+
+Every take from run 2 to run 17 was captured with a limiter pinning at −0.49 dBFS. In the
+worst of them — runs 10, 11, 12, 15, 16, 17 — **20 to 30% of every sample in the file** sits
+within 0.1 dB of that ceiling. The test is simple enough that it should always have been
+run: a limiter stacks samples at its threshold and an honest recording does not.
+
+    peak = max|x|;  count samples with |x| > peak × 0.9886
+
+Under about 0.01% is clean. Over 1% is a limiter.
+
+It cost a whole model. The positional crossfade was measured twice from limited audio and
+came out as `cos(πx/2)^1.44` with the pair *dipping* 1.3 dB at the midpoint — "no standard
+crossfade does that" was written in the notes at the time and treated as a curiosity rather
+than as the symptom it was. Re-recorded clean, the answer is different by up to 4.75 dB.
+
+Single-tone level readings survived nearly intact; what the limiter wrecked was the one
+**two-tone** measurement, because a weak tone beside a limited strong one is dragged down by
+the strong one's gain reduction. Frequency and timing measurements were barely touched — a
+clipped sine's zero crossings do not move — which is why the filter's corner-derived times
+could still be trusted as anchors when its levels could not.
+
+### The positional crossfade, measured and modelled — new
+
+Program header byte 21. **48 of the 390 library programmes have it on with overlapping
+keygroups**, and they are the multi-sampled instruments: GRAND-PNO1 and 2 with nine keygroups
+apiece, GRANDX, CB CEL VL. Every engine used to sound both keygroups at full level across the
+overlap — about 6 dB too loud, with two different recordings of one note beating together.
+
+A key's position in the overlap is `x = (i + 1) / (N + 1)`, and the attenuation comes from a
+measured table rather than a formula. Seven overlap widths from 1 key to 21 agree to 0.1 dB
+wherever two land on the same `x`, and two independent clean takes agree to 0.05 dB.
+
+Every distinct level in the clean take is a whole number of **0.4 dB steps**, which turns out
+to be the machine's own internal decibel step — the sustain plateau and zone loudness count
+in it too, measured separately on different runs.
+
+Three-deep overlaps multiply their pairwise fades (0.21 dB rms over thirteen readings, where
+taking only the deepest single fade misses by 5.52). Two keygroups on *identical* keys are
+not faded at all — 17 library pairs are exactly that, the ARP2600 layers, and they had been
+playing 3.7 dB too quiet apiece.
+
+### The envelope curve is a counter, and the low bit of the byte is ignored
+
+Reading every setting from 45 to 56 one unit at a time:
+
+| stored | 45 | 46 | 47 | 48 | 49 | 50 | 51 | 52 | 53 | 54 | 55 | 56 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dB/s | 223.6 | 191.1 | 192.2 | 163.5 | 163.7 | 141.3 | 141.4 | 121.2 | 121.5 | 103.8 | 103.8 | 88.9 |
+
+(46,47), (48,49), (50,51), (52,53), (54,55) — each pair identical to better than half a per
+cent, where the step *between* pairs is fifteen. **Two stored units share each envelope
+time.** So stored 51 plays what 50 plays, where the model used to interpolate something
+between 50 and 52 and was up to 8% out.
+
+Read by count rather than by byte the curve is geometric at **1.166 a step**, which explains
+an alternation found earlier and left unexplained: five stored units is two counter steps or
+three, and 1.166² = 1.360 against a measured 1.34, 1.166³ = 1.585 against a measured 1.60.
+
+### `ENV_TIME`'s fifty-byte gap, measured
+
+There was nothing measured between stored 0 and 50 — a hole holding **two in five of the VCA
+releases on the real disks** — filled by interpolating between the ends. A release ladder and
+a decay ladder across it agree rung for rung to 1.5%, so it is one curve, and the old guess
+was out by up to 35%.
+
+The cause was upstream of the gap: the table's **anchor at stored 50 was itself 16% slow**, so
+everything interpolated below it inherited the error. `VcaReleaseDb` moved 40 → 42.5 with it.
+
+### The VCA attack below stored 30, set as a byte
+
+It had two points down there and *both* were reached sideways, through the velocity rule
+rather than by setting the byte. Twelve settings measured directly:
+
+| stored | 8 | 10 | 12 | 15 | 18 | 20 | 22 | 25 | 28 | 30 | 35 | 40 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 5.4/n | 300 | 208 | 142 | 93 | 68 | 56 | 45 | 35 | 28 | 24 | 17 | 14 |
+
+The counter law holds all the way down — every one within 2% of `5.4/n` for whole n. Of the
+two the table already had, stored 20 was right and **stored 8 was 11% out**.
+
+### A sustain of 0 is silence, and both decays are rates
+
+**1907 of the 1908 library keygroups set a decay and 723 decay to a sustain of 20 or less**,
+so this is every plucked and struck sound on every disk. They used to stop dead 39.6 dB up
+and sit there ringing. The plateau is a straight line in decibels from stored 99 down to 5 —
+confirming `SustainDb` — but a stored 0 is not on that line at all: it falls straight past
+and goes to silence.
+
+The **amplitude decay is a rate, not a duration**: held at one setting across twelve sustain
+depths it fell at 48.2 dB/s at every one. A duration would put every plateau at the same
+moment whatever its depth.
+
+The **filter's decay is a rate too**, which took a separate run to see because the first
+attempt watched the filter's *release* while the amplitude was dying underneath it. Watched
+against a steady level, `time = 0.354 + 0.235 × octaves` fits to within 0.008 s where a
+duration is a flat line. So both envelopes are rates and the machine has one generator.
+
+### Aftertouch — new
+
+Keygroup byte 21, which every engine read and threw away, and which the plugin had no
+channel-pressure handling for at all. It scales the LFO's depth from pressure exactly as
+byte 22 does from the modwheel, and it turns out to be the same mechanism: **71.95 cents at
+full against the wheel's 72.3**, the same proportional law (0.511 of full at byte 21 = 50,
+where the wheel gave 0.509), and the two **add** — wheel alone 71.87 cents, wheel and pressure
+together 149.79.
+
+This was excused for a long time on the grounds that byte 21 is 0 in all 1908 keygroups of
+the disks to hand. Those are one person's disks, and this reads anybody's.
+
+### Constants corrected against clean recordings
+
+| | was | now | |
+|---|---|---|---|
+| `LoudnessDbPerUnit` | 0.29 | **0.401** | one reading on a limited take; now ten rungs, 38% out |
+| `EnvOctaves` | 8.5 | **8.3** | matched neither of two runs, nor its own comment |
+| `WarpCentsPerUnit` | 6.25 | **6.44** | the first run ever to vary the depth byte |
+| `VelDbPerStep` | 0.63 | **0.642** | measured directly for the first time |
+| `VcfTimeScale` | 0.78 | **0.71** | was one filter decay against one amplitude decay |
+| `VcaReleaseDb` | 40 | **42.5** | moves with `ENV_TIME`; their product is unchanged |
+
+### The individual outputs stay in the main mix
+
+Byte 19 sends a keygroup to ALL, to one of MONO 1–8, or hard LEFT or RIGHT. The eight
+individual outputs were played centred, which was a labelled guess covering **253 library
+keygroups** — if the machine dropped those voices from the main stereo pair, as many samplers
+of that era do, every one of them should have been silent there. All eight read the same as
+ALL to 0.4 dB. They stay.
+
+### The browser app sounded only one keygroup per key
+
+It returned the first keygroup whose range covered a note and stopped looking, so the page
+played one sample where the hardware plays two — on exactly the multi-sampled programmes the
+crossfade is about. It now sounds every keygroup that answers a key, and fades them.
+
 ### Velocity to attack is modelled, in all three engines
 
 Keygroup byte 9. Every engine read it off the disk and threw it away, so 164 keygroups across
