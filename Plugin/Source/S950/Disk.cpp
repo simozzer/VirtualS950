@@ -302,6 +302,11 @@ namespace s950
             kg.velToRelease = static_cast<signed char> (raw[10]);
             kg.velToLoudness = raw[11];
 
+            kg.warpVelocity = raw[12];
+            kg.warpDepth    = static_cast<signed char> (raw[13]);
+            kg.warpTime     = raw[14];
+            kg.outputPort   = static_cast<signed char> (raw[19]) + 1;
+
             kg.lfoDelay = raw[15];
             kg.lfoRate  = raw[16];
             kg.lfoDepth = raw[17];
@@ -350,6 +355,7 @@ namespace s950
         const long long from = std::max<long long> (0, sample.loopEnd - sample.loopLength);
 
         s->loops    = sample.loopMode != 'O' && sample.loopLength > 0 && sample.loopEnd > 0 && to > from;
+        s->alternates = sample.loopMode == 'A';
         s->loopFrom = static_cast<int> (from);
         s->loopTo   = static_cast<int> (to);
 
@@ -426,6 +432,14 @@ namespace s950
                 p.velToFilter   = kg.velToFilter;
                 p.keyToFilter   = kg.keyToFilter;
                 p.velToLoudness = kg.velToLoudness;
+                p.velToAttack   = kg.velToAttack;
+                p.velToRelease  = kg.velToRelease;
+                p.velocityReleaseOn = kg.velocityReleaseOn();
+
+                p.warpVelocity  = kg.warpVelocity;
+                p.warpDepth     = kg.warpDepth;
+                p.warpTime      = kg.warpTime;
+                p.outputPort    = kg.outputPort;
 
                 p.lfoDelay         = kg.lfoDelay;
                 p.lfoRate          = kg.lfoRate;

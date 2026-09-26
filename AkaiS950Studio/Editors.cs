@@ -507,14 +507,27 @@ namespace AkaiS950Studio
             }
         }
 
-        [Category("Loop"), Description("N normal, R reverse.")]
+        [Category("Loop"),
+         Description("N normal, R reverse. Changing this REWRITES THE AUDIO backwards - " +
+                     "it is a destructive edit on the machine, not a playback flag.")]
         public char LoopDirection
         {
             get { return (char)B(0x2B); }
             set
             {
+                // Not a poke, and this one used to be.
+                //
+                // Measured: a sample written forwards with 0x2B set to 'R' plays forwards,
+                // one-shot or looping. So the machine rewrites the audio backwards and keeps
+                // the byte as a record of it, and setting the byte alone marked a sample as
+                // reversed while it went on playing forwards - a disk contradicting itself,
+                // from a property setter that looked harmless.
                 char c = char.ToUpperInvariant(value);
-                if (c == 'N' || c == 'R') Set(0x2B, (byte)c);
+                if (c != 'N' && c != 'R') return;
+
+                try { Disk.SetSampleDirection(Entry, c); }
+                catch (InvalidOperationException) { /* no audio; the grid keeps the old value */ }
+                catch (ArgumentException) { /* same */ }
             }
         }
 

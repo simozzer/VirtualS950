@@ -199,6 +199,7 @@ private:
     juce::AudioBuffer<float> mono;
 
     std::atomic<float>* gainParameter = nullptr;
+    std::atomic<float>* bendRangeParameter = nullptr;
 
     /*
      * One player's control: a parameter, the continuous controller that moves it, and the

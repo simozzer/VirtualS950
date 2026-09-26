@@ -112,12 +112,47 @@ namespace s950
         void noteOn (int note, int velocity, int at = 0) { post (EvNoteOn,  note, velocity, at); }
         void noteOff (int note, int at = 0)              { post (EvNoteOff, note, 0, at); }
         void modwheel (int value, int at = 0)            { post (EvWheel,   value, 0, at); }
+
+        /*
+         * The pitch wheel, 0..16383 with 8192 at rest.
+         *
+         * Split across the event's two byte fields because fourteen bits do not fit in one,
+         * and reassembled in applyNextEvent. Sample-accurate like every other message: a bend
+         * lands where the host put it rather than on the block boundary, which matters more
+         * for a wheel than for a note because a sweep is a stream of them.
+         */
+        void pitchBend (int value, int at = 0)
+        {
+            const int v = value < 0 ? 0 : (value > 16383 ? 16383 : value);
+            post (EvBend, static_cast<unsigned char> ((v >> 7) & 0x7F),
+                          static_cast<unsigned char> (v & 0x7F), at);
+        }
+
+        /*
+         * How far the wheel bends, in semitones. The machine's MIDI page offers 1 to 12.
+         *
+         * Not read off the disk. It is a setting of the machine rather than of a programme,
+         * and the OVERALL SETTINGS file that would hold it is only written when someone saves
+         * it deliberately - so the plugin owns it, as the host's user does.
+         */
+        std::atomic<double> bendRange { 2.0 };
         void allNotesOff (int at = 0)                    { post (EvAllOff,  0, 0, at); }
 
         // -------------------------------------------------------------------- render
 
         /// Fill `count` mono samples. Allocates nothing.
-        void render (float* buffer, int count);
+        /// Mono, as it always was. Bit-identical to before.
+        void render (float* buffer, int count) { render (buffer, nullptr, count); }
+
+        /*
+         * Stereo, honouring each keygroup's output port.
+         *
+         * The machine's LEFT and RIGHT sockets are two mono outputs rather than a pan pot, so
+         * a keygroup sent to one is absent from the other - 38 keygroups across four library
+         * programmes, TUBULAR 2's bells among them. Everything else lands on both at full
+         * level, which is what the mono path always did with everything.
+         */
+        void render (float* left, float* right, int count);
 
         // ------------------------------------------------------------ for the caller
 
@@ -130,6 +165,7 @@ namespace s950
         static constexpr unsigned char EvNoteOff = 2;
         static constexpr unsigned char EvWheel   = 3;
         static constexpr unsigned char EvAllOff  = 4;
+        static constexpr unsigned char EvBend    = 5;
 
         static constexpr int RingSize = 256;
 
@@ -149,7 +185,7 @@ namespace s950
         void applyNextEvent();
 
         /// Every voice into one stretch of the buffer.
-        void renderSpan (float* buffer, int count);
+        void renderSpan (float* left, float* right, int count);
         void repatch();
         void startNote (int note, int velocity);
         void stopNote (int note);
@@ -181,5 +217,6 @@ namespace s950
         long long sequence = 0;
         double    sharedPhase = 0.0, sharedStep = 0.0;
         int       wheel = 0;
+        int       bend14 = 8192;         // the pitch wheel, at rest in the middle
     };
 }

@@ -90,6 +90,24 @@ namespace AkaiS950Engine
 
         // the LFO
         double _lfoCents, _lfoPhase, _lfoStep, _fadeSeconds, _fadeT;
+
+        /// <summary>Seconds since the key went down. Warp's bend is measured from there, and
+        /// _t cannot serve because it restarts at every envelope stage.</summary>
+        double _sinceOn;
+
+        /// <summary>Where the keygroup's output port puts this voice. See Cal.OutputGains.</summary>
+        double _outL = 1.0, _outR = 1.0;
+
+        /// <summary>+1 forwards, -1 backwards. Only an alternating loop ever makes it -1.</summary>
+        int _dir = 1;
+
+        /// <summary>The pitch wheel as a rate multiplier, set by the engine once per block.
+        /// Named for the wheel because the LFO's own multiplier inside Render is already
+        /// called bend, and one shadowing the other is a bug waiting to be written.</summary>
+        double _wheelBend = 1.0;
+
+        /// <summary>The wheel reaches a note already sounding, unlike velocity.</summary>
+        public void SetBend(double ratio) { _wheelBend = ratio; }
         double _wheelCents;          // kept so Adopt can add it back to a new depth
         bool _ownLfo;
 
@@ -112,6 +130,7 @@ namespace AkaiS950Engine
             _step = _sound.SourceRate / sampleRate * ratio;
             _leaveRate = _sound.SourceRate * ratio;
             _pos = 0;
+            _dir = 1;               // forwards until an alternating loop turns it round
 
             // --- amplitude envelope
             double vel = velocity < 0 ? 0 : (velocity > 127 ? 127 : velocity);
@@ -120,9 +139,12 @@ namespace AkaiS950Engine
             double zoneDb = kg.ZoneLoudness * Cal.LoudnessDbPerUnit;
             double sustainDb = -(1.0 - Clamp01(kg.VcaSustain / 99.0)) * Cal.SustainDb;
 
-            _attack = Cal.VcaAttackSeconds(kg.VcaAttack);
+            _attack = Cal.VcaAttackSeconds(
+                          Cal.VelocityAttackByte(kg.VcaAttack, kg.VelToAttack, _velocity));
             _decay = Cal.EnvSeconds(kg.VcaDecay);
-            _release = Cal.EnvSeconds(kg.VcaRelease);
+            _release = Cal.EnvSeconds(
+                           Cal.VelocityReleaseByte(kg.VcaRelease, kg.VelToRelease,
+                                                   _velocity, kg.VelocityReleaseOn));
             _peak = Math.Min(Cal.DbToGain(velDb + zoneDb), 4.0);
             _sustain = _peak * Cal.DbToGain(sustainDb);
 
@@ -166,6 +188,11 @@ namespace AkaiS950Engine
                        (Cal.LfoRateHzAtZero + kg.LfoRate * Cal.LfoRateHzPerUnit) / sampleRate;
             _fadeSeconds = Cal.LfoDelayFadeConstant / Math.Max(1, 100 - kg.LfoDelay);
             _fadeT = 0;
+            _sinceOn = 0;
+
+            // Which output the keygroup goes to. Settled at the strike, like the peak: nothing
+            // moves a sounding note from one socket to another on the machine either.
+            Cal.OutputGains(kg.OutputPort, out _outL, out _outR);
         }
 
         /// <summary>
@@ -205,9 +232,12 @@ namespace AkaiS950Engine
             double zoneDb = kg.ZoneLoudness * Cal.LoudnessDbPerUnit;
             double sustainDb = -(1.0 - Clamp01(kg.VcaSustain / 99.0)) * Cal.SustainDb;
 
-            _attack = Cal.VcaAttackSeconds(kg.VcaAttack);
+            _attack = Cal.VcaAttackSeconds(
+                          Cal.VelocityAttackByte(kg.VcaAttack, kg.VelToAttack, _velocity));
             _decay = Cal.EnvSeconds(kg.VcaDecay);
-            _release = Cal.EnvSeconds(kg.VcaRelease);
+            _release = Cal.EnvSeconds(
+                           Cal.VelocityReleaseByte(kg.VcaRelease, kg.VelToRelease,
+                                                   _velocity, kg.VelocityReleaseOn));
             _peak = Math.Min(Cal.DbToGain(velDb + zoneDb), 4.0);
             _sustain = _peak * Cal.DbToGain(sustainDb);
 
@@ -268,9 +298,28 @@ namespace AkaiS950Engine
         /// six seconds, and with it set they ran at rates 3.5% apart and drifted a whole
         /// turn in the same six.
         /// </summary>
+        /// <summary>Mono, as it always was - every voice at full gain into one buffer.</summary>
         public void Render(float[] buffer, int offset, int count, double sharedPhase)
         {
+            Render(buffer, null, offset, count, sharedPhase);
+        }
+
+        /// <summary>
+        /// Stereo, with the keygroup's output port deciding which side it lands on.
+        ///
+        /// `right` null is the mono path and is bit-identical to what it always did: the pan
+        /// gains are ignored and the sample goes into `left` at full level. Only a caller
+        /// that actually has two channels pays for the second write.
+        /// </summary>
+        public void Render(float[] left, float[] right, int offset, int count, double sharedPhase)
+        {
             if (_stage == Stage.Idle) return;
+
+            // hoisted out of the sample loop: neither changes while a block renders
+            bool stereo = right != null;
+            float panL = stereo ? (float)_outL : 1f;
+            float panR = stereo ? (float)_outR : 0f;
+            float[] buffer = left;
 
             float[] audio = _sound.Audio;
             int last = audio.Length - 1;
@@ -289,7 +338,23 @@ namespace AkaiS950Engine
                 double cents = _lfoCents * fade;
                 double phase = _ownLfo ? _lfoPhase : sharedPhase;
                 double bend = cents == 0 ? 1.0 : Math.Pow(2.0, cents * Math.Sin(phase) / 1200.0);
-                double step = _step * bend;
+
+                /*
+                 * WARP rides on top of the LFO, both as multipliers on the playback rate.
+                 *
+                 * It is worked out once a block like everything else here. The bend is fastest
+                 * at the very start - a time constant of 34 ms at byte 14 = 0 - so a long
+                 * control block will step down it in visible stairs rather than glide. That is
+                 * the same trade the LFO already makes, and at the block sizes a host asks for
+                 * it is well under a cent per step.
+                 *
+                 * Changing the playback rate drags the filter with it for free: the cutoff and
+                 * the ceiling are both derived from the rate the audio leaves at.
+                 */
+                double warp = Cal.WarpRatio(_kg.WarpVelocity, _kg.WarpDepth, _kg.WarpTime,
+                                            _velocity, _sinceOn);
+
+                double step = _step * bend * warp * _wheelBend;
 
                 double gainStart = _gain;
                 double gainEnd = EnvelopeAfter(n * dt);
@@ -310,12 +375,38 @@ namespace AkaiS950Engine
                      * and the voice simply stopped after one pass. It cost three of the
                      * four failures the first run of EngineCheck reported.
                      */
-                    if (_pos >= end)
+                    /*
+                     * An ALTERNATING loop turns round at each end instead of wrapping.
+                     *
+                     * Reflecting the position about the end - pos' = 2*end - pos - is what
+                     * makes the cycle 2N frames with the end frame played twice, which is
+                     * what the hardware does: four loop lengths from 20 to 128 frames all
+                     * autocorrelated at exactly 2N, never 2N-2. Wrapping the other way, or
+                     * reflecting about end-1, would give 2N-2 and be a tenth of a semitone
+                     * flat on a short loop.
+                     */
+                    if (_dir > 0 && _pos >= end)
                     {
                         if (!loops) { _stage = Stage.Idle; return; }
-                        double len = _sound.LoopTo - _sound.LoopFrom;
-                        do { _pos -= len; } while (_pos >= end);
-                        if (_pos < 0) _pos = _sound.LoopFrom;
+
+                        if (_sound.Alternates)
+                        {
+                            _pos = 2 * end - _pos;
+                            _dir = -1;
+                            if (_pos < _sound.LoopFrom) _pos = _sound.LoopFrom;
+                        }
+                        else
+                        {
+                            double len = _sound.LoopTo - _sound.LoopFrom;
+                            do { _pos -= len; } while (_pos >= end);
+                            if (_pos < 0) _pos = _sound.LoopFrom;
+                        }
+                    }
+                    else if (_dir < 0 && _pos < _sound.LoopFrom)
+                    {
+                        _pos = 2 * _sound.LoopFrom - _pos;
+                        _dir = 1;
+                        if (_pos >= end) _pos = end - 1;
                     }
 
                     // interpolate towards the next frame, which for the last one is
@@ -328,15 +419,18 @@ namespace AkaiS950Engine
                     double frac = _pos - i0;
                     double x = audio[i0] + (audio[i1] - audio[i0]) * frac;
 
-                    buffer[offset + done + j] += (float)(_filter.Process(x) * gainStart);
+                    float s = (float)(_filter.Process(x) * gainStart);
+                    buffer[offset + done + j] += s * panL;
+                    if (stereo) right[offset + done + j] += s * panR;
                     gainStart += gainStep;
 
-                    _pos += step;
+                    _pos += step * _dir;
                 }
 
                 _gain = gainEnd;
                 _t += n * dt;
                 _fadeT += n * dt;
+                _sinceOn += n * dt;
 
                 // the filter's clock, which no amplitude stage change resets
                 _vcfT += n * dt;
@@ -412,7 +506,13 @@ namespace AkaiS950Engine
 
                 case Stage.Release:
                     if (_release <= 0.0005) return 0;
-                    return Fall(_releaseFrom, 1e-4, Math.Min(1.0, t / _release));
+
+                    // A RATE: Cal.VcaReleaseDb in one release time, from wherever the key came
+                    // up, and it keeps falling. This used to run from _releaseFrom to 1e-4 over
+                    // exactly one release time, which is 80 dB from a note at full level - twice
+                    // the machine's speed - and made a quiet note fade in the same wall-clock
+                    // time as a loud one, which is a duration, not a rate.
+                    return _releaseFrom * Math.Pow(10.0, -Cal.VcaReleaseDb / 20.0 * (t / _release));
 
                 default:
                     return _sustain;
@@ -438,7 +538,11 @@ namespace AkaiS950Engine
                     if (_t >= _decay) { _stage = Stage.Sustain; _t = 0; _gain = _sustain; }
                     break;
                 case Stage.Release:
-                    if (_t >= _release || _gain <= 2e-4) _stage = Stage.Idle;
+                    // The gain alone decides when the note is over. It used to end at
+                    // _t >= _release as well, which with a RATE cuts the tail off after one
+                    // release time however loud the note still is - audible as a click on
+                    // anything with a long release.
+                    if (_gain <= 2e-4) _stage = Stage.Idle;
                     break;
             }
         }

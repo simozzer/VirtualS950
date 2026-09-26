@@ -128,6 +128,58 @@ namespace
             same (what, s950::cal::vcaAttackSeconds (a.stored), a.seconds, 1e-9);
         }
 
+        std::printf ("\n  the pitch wheel, %d combinations\n",
+                     static_cast<int> (std::size (reference::bends)));
+
+        for (const auto& b : reference::bends)
+        {
+            char what[80];
+            std::snprintf (what, sizeof (what), "bend %d at range %g", b.wheel, b.range);
+            same (what, s950::cal::bendRatio (b.wheel, b.range), b.ratio, 1e-12);
+        }
+
+        std::printf ("\n  warp, %d combinations\n",
+                     static_cast<int> (std::size (reference::warps)));
+
+        for (const auto& w : reference::warps)
+        {
+            char what[112];
+            std::snprintf (what, sizeof (what),
+                           "warp v%d d%d t%d at velocity %d, %.2fs",
+                           w.velWarp, w.depth, w.time, static_cast<int> (w.velocity), w.t);
+            same (what,
+                  s950::cal::warpRatio (w.velWarp, w.depth, w.time, w.velocity, w.t),
+                  w.ratio, 1e-9);
+        }
+
+        std::printf ("\n  velocity to release, %d combinations\n",
+                     static_cast<int> (std::size (reference::velReleases)));
+
+        for (const auto& r : reference::velReleases)
+        {
+            char what[96];
+            std::snprintf (what, sizeof (what), "release %d depth %d at velocity %d, %s",
+                           r.stored, r.depth, r.velocity, r.on ? "on" : "off");
+            same (what,
+                  s950::cal::envSeconds (
+                      s950::cal::velocityReleaseByte (r.stored, r.depth, r.velocity, r.on)),
+                  r.seconds, 1e-9);
+        }
+
+        std::printf ("\n  velocity to attack, %d combinations\n",
+                     static_cast<int> (std::size (reference::velAttacks)));
+
+        for (const auto& a : reference::velAttacks)
+        {
+            char what[80];
+            std::snprintf (what, sizeof (what), "attack %d depth %d at velocity %d",
+                           a.stored, a.depth, a.velocity);
+            same (what,
+                  s950::cal::vcaAttackSeconds (
+                      s950::cal::velocityAttackByte (a.stored, a.depth, a.velocity)),
+                  a.seconds, 1e-9);
+        }
+
         /*
          * And that it really is a counter, which the ladder above would not notice on its
          * own: a port that interpolated smoothly between the same measured points would match

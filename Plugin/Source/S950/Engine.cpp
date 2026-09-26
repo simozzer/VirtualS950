@@ -141,7 +141,8 @@ namespace s950
         {
             case EvNoteOn:  startNote (e.a, e.b); break;
             case EvNoteOff: stopNote (e.a);       break;
-            case EvWheel:   wheel = e.a;          break;
+            case EvWheel:   wheel = e.a;                break;
+            case EvBend:    bend14 = (e.a << 7) | e.b;  break;
 
             case EvAllOff:
                 for (auto& v : voices) v.release();
@@ -273,7 +274,7 @@ namespace s950
         return n;
     }
 
-    void Engine::renderSpan (float* buffer, int count)
+    void Engine::renderSpan (float* left, float* right, int count)
     {
         if (count <= 0) return;
 
@@ -281,11 +282,27 @@ namespace s950
         // settings and a control moved mid-block cannot land differently on two voices.
         const Trims now = trims.read();
 
+        /*
+         * The pitch wheel, as a multiplier on the playback rate, worked out once per stretch.
+         *
+         * Read here rather than at note-on because a bend has to reach notes that are already
+         * sounding - that is the whole point of a wheel, and it is what separates it from
+         * velocity, which is settled when the key goes down.
+         *
+         * 8192 is the rest position and the two halves are not the same width: 8192 steps
+         * below it and 8191 above. Dividing by 8192 either way would make a full upward bend
+         * fall one step short of the range, which is inaudible but wrong; dividing by the
+         * right half of the range gets both ends exactly.
+         */
+        const double bendNow =
+            cal::bendRatio (bend14, bendRange.load (std::memory_order_relaxed));
+
         for (auto& v : voices)
             if (v.isActive())
             {
                 v.setTrims (now);
-                v.render (buffer, count, sharedPhase);
+                v.setBend (bendNow);
+                v.render (left, right, count, sharedPhase);
             }
 
         // The shared LFO moves with the audio, so it advances per stretch rather than
@@ -307,13 +324,15 @@ namespace s950
      * that is one stretch and the same work as before; with a note at sample 200 of 512
      * it is two, and the note starts on sample 200.
      */
-    void Engine::render (float* buffer, int count)
+    void Engine::render (float* buffer, float* right, int count)
     {
         takePendingPatch();
 
         if (count <= 0) return;
 
         std::memset (buffer, 0, static_cast<size_t> (count) * sizeof (float));
+        if (right != nullptr)
+            std::memset (right, 0, static_cast<size_t> (count) * sizeof (float));
 
         int at = 0;
         while (at < count)
@@ -329,7 +348,7 @@ namespace s950
             if (until <= at)  until = at + 1;      // never stand still
             if (until > count) until = count;
 
-            renderSpan (buffer + at, until - at);
+            renderSpan (buffer + at, right != nullptr ? right + at : nullptr, until - at);
             at = until;
         }
 
@@ -339,6 +358,12 @@ namespace s950
         {
             const float v = buffer[i] * g;
             buffer[i] = v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v);
+
+            if (right != nullptr)
+            {
+                const float r = right[i] * g;
+                right[i] = r > 1.0f ? 1.0f : (r < -1.0f ? -1.0f : r);
+            }
         }
     }
 }

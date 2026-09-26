@@ -182,17 +182,41 @@ namespace s950::cal
      * their own stretch of the range - the right shape, though exactly where each step falls
      * is not measured.
      *
-     * Below stored 30 nothing is measured at all. The entry at 0 is the count that crosses
-     * VcaAttackGate, so stored 0 and 1 are steps and the ramp climbs from about a millisecond
-     * at 2 to the measured 0.209 s at 30. That shape is a guess; that the two ends of it are
-     * a gate and 0.209 s is not.
+     * TWO OF THESE WERE MEASURED SIDEWAYS, THROUGH VELOCITY
+     *
+     * The stretch below stored 30 used to be a single guessed entry - 7000 at stored 0,
+     * interpolated the whole way to the measured 26 at stored 30 - because no run ever set an
+     * attack byte that low.
+     *
+     * Run 7 reached it from the side. Velocity to attack turned out to be a plain subtraction
+     * from the attack byte (see velocityAttackByte), so a base of 70 struck hard enough lands
+     * wherever you like: velocity 64 at full depth puts it at stored 20.1 and velocity 80 at
+     * stored 7.6. Those two clips are the first measurements of this stretch, and they say the
+     * guess was out by 3x and 6x:
+     *
+     *     stored        7.6    20.1
+     *     measured n    270      55
+     *     the guess    1684     164
+     *
+     * They are entered at 8 and 20, where they fall to the nearest byte. This leans on the
+     * velocity rule being right, which is fair - that rule is confirmed against seven clips in
+     * the region where this table IS measured, every one within a single counter step - but it
+     * is a rung below the rest of the table, and stored 7.6 is the weakest thing here: 0.020 s
+     * is near the floor of what the analysis can time, and an error there is large in n.
+     *
+     * Stored 0 is still the gate rather than a measurement. Extrapolating the two new points
+     * downwards puts it at about 7.6 ms, which is the first evidence that ever bore on it and
+     * is not enough to overturn how envelope generators are built. What the new points change
+     * is that the climb out of the gate is now anchored at 8 and 20 instead of running
+     * unguided all the way to 30.
      */
     struct AttackStep { double stored, steps; };
 
     inline constexpr AttackStep VcaAttackSteps[] =
     {
-        {  0, 7000 }, { 30, 26 }, { 40, 15 }, { 50, 9 }, { 55, 7 }, { 60, 6 }, { 65, 5 },
-        { 70,    4 }, { 75,  4 }, { 80,  3 }, { 85, 3 }, { 90, 2 }, { 95, 2 }, { 99, 2 }
+        {  0, 7000 }, {  8, 270 }, { 20, 55 },
+        { 30,   26 }, { 40,  15 }, { 50,  9 }, { 55, 7 }, { 60, 6 }, { 65, 5 },
+        { 70,    4 }, { 75,   4 }, { 80,  3 }, { 85, 3 }, { 90, 2 }, { 95, 2 }, { 99, 2 }
     };
 
     inline constexpr int VcaAttackStepCount = static_cast<int> (std::size (VcaAttackSteps));
@@ -226,6 +250,112 @@ namespace s950::cal
      * and every earlier release measurement was taken there.
      */
     inline constexpr bool ReleaseIsARate = true;
+
+    /*
+     * How far the VCA release falls in one release time: 40 dB, measured.
+     *
+     * Every engine had this at 80 - the gain ran down to 1e-4 over envSeconds(byte) - and
+     * nothing had checked it, because until run 9 no recording timed a release against a known
+     * byte at more than one setting.
+     *
+     * Run 9 times sixteen releases spanning stored 20 to 95. Divide the 40 dB each took by the
+     * curve's time for its byte and the span is flat: twelve of the sixteen give 41.0 dB with a
+     * spread of 0.7, across a 200:1 range of release times. That is a constant, and it is 40.
+     *
+     * So the envelope curve was right and the span was wrong - the better of the two answers,
+     * since the same curve still serves the attack, the decay and the filter. It is why every
+     * release ran at twice the machine's speed: 699 ms against 1366 at stored 70, on every
+     * programme rather than only those with a velocity depth.
+     *
+     * The four that miss are at stored 44.6 and 46 and imply 49.3 dB - the same place, the same
+     * direction and the same size as the velocity-release fit's worst misses, so EnvTime is
+     * about 20% slow around stored 45. Left alone: one bad setting in a nine-point measured
+     * table wants re-measuring, not a second constant over the top.
+     *
+     * It is a RATE, so this is how far the level falls in one release time from wherever the
+     * key came up - not the distance it has to cover before it stops.
+     */
+    inline constexpr double VcaReleaseDb = 40.0;
+
+    /*
+     * WARP - keygroup bytes 12, 13 and 14. A pitch bend at note-on, decaying back to pitch.
+     *
+     *     bend in cents = WarpCentsPerUnit * byte13 * scale,  decaying as exp(-t / tau)
+     *     scale = 1                                 when byte 12 is 0
+     *           = (byte12 / 99) * (velocity / 127)  when byte 12 is above 0
+     *
+     * Measured over runs 10, 11 and 12; the model fits 25 clips at 7.3% rms, worst 17%. 98 of
+     * the 1908 keygroups on the real disks use it, and until now every engine dropped it.
+     *
+     * BYTE 13 IS THE DEPTH, AND BYTE 12 IS NOT. The panel calls byte 12 "warp velocity", which
+     * reads like the depth; it is how far velocity scales the depth, and ZERO MEANS OFF rather
+     * than none. At byte 12 = 0 the bend is full however gently the key is struck - 364, 342,
+     * 320 and 338 cents at velocities 1, 32, 64 and 127, no trend. At byte 12 = 99 the same
+     * keygroup is flat at velocity 1 and bends 298 cents at 127. That decides how 22 real
+     * keygroups sound: the ones setting byte 13 with byte 12 left at 0.
+     *
+     * THERE IS NO KEY FOLLOW. Two published descriptions call byte 13 a key follow that
+     * shortens the decay as notes rise. Struck at keys 48, 60 and 72 the same keygroup gave
+     * 64.2, 64.2 and 70.7 ms. The panel's name for it, ATTACK OFFSET, survives where theirs
+     * does not.
+     *
+     * The fit gives 6.21 cents per unit and cannot separate 6.0 from 6.5 - rms is 9.3%, 7.3%
+     * and 7.2% at 6.0, 6.25 and 6.5. So 6.25 is a CHOICE among values the measurement allows,
+     * taken because it is a sixteenth of a semitone exactly and this machine has form for
+     * mechanism-shaped numbers. It is not read to that precision.
+     */
+    inline constexpr double WarpCentsPerUnit = 6.25;
+
+    /*
+     * Where a keygroup's output port puts it in the stereo pair, as a left and right gain.
+     *
+     * Byte 19, read off the panel: 0 ALL, 1..8 the individual MONO outputs, 9 LEFT, 10 RIGHT,
+     * with the byte storing one lower so ALL is -1. 291 of the 1908 library keygroups set it,
+     * all in drum and percussion programmes bar two - TUBULAR 2, whose eight keygroups read
+     * L L L L R R R R, and PIZ-CHORUS, one keygroup each side.
+     *
+     * LEFT and RIGHT are hard: the machine's left and right sockets are two mono outputs, not
+     * a pan pot, so a keygroup sent to one is absent from the other.
+     *
+     * MONO 1 TO 8 ARE LEFT CENTRED, WHICH IS A PLACEHOLDER AND NOT A MEASUREMENT. Those are
+     * eight physical jacks, and what the main stereo pair does with a keygroup routed to one
+     * is a question about hardware no disk can answer: on many samplers of the era, assigning
+     * a voice to an individual output REMOVES it from the main mix, which would make 253
+     * library keygroups silent here rather than centred. Until somebody plays one and listens
+     * to the main outs, centring them is the choice that cannot make anything worse - it is
+     * what all three engines already did with every keygroup.
+     */
+    inline void outputGains (int port, double& left, double& right)
+    {
+        if (port == 9)  { left = 1.0; right = 0.0; return; }    // LEFT
+        if (port == 10) { left = 0.0; right = 1.0; return; }    // RIGHT
+
+        left = 1.0; right = 1.0;                                // ALL, and MONO 1..8
+    }
+
+    /*
+     * The bend's time constant in seconds, by byte 14. Measured, eleven points.
+     *
+     * Nothing like EnvTime: it spans 22:1 where that spans 1000:1. Byte 14 = 50 is the mean of
+     * eight independent clips reading 68 to 70 ms; byte 14 = 99 is two clips in different runs
+     * reading 749 and 762. The points at 30, 40, 60, 70, 90 and 95 were measured deliberately
+     * because the curve turns over hardest above 80, and interpolating through a turn is how
+     * EnvTime came to be 20% wrong around stored 45.
+     *
+     * 99 is what 1529 of the 1908 real keygroups carry, so 755 ms is the common case.
+     */
+    struct WarpStep { double stored, seconds; };
+
+    inline constexpr WarpStep WarpTime[] =
+    {
+        {  0, 0.0343 }, { 20, 0.0432 }, { 30, 0.0483 }, { 40, 0.0577 }, { 50, 0.0695 },
+        { 60, 0.0862 }, { 70, 0.1128 }, { 80, 0.1596 }, { 90, 0.2760 }, { 95, 0.4327 },
+        { 99, 0.7555 }
+    };
+
+    inline constexpr int WarpTimeCount = static_cast<int> (std::size (WarpTime));
+
+    // The three warp functions live further down, after clamp() is declared.
 
     /*
      * The filter's release follows this same scale, and there is no cap on it.
@@ -407,6 +537,173 @@ namespace s950::cal
      * where n is 4, 3, 2. That is the machine: two settings sharing an n really do give the
      * same attack to four digits, and the plugin's attack trim steps for the same reason.
      */
+    /*
+     * How far Warp bends the pitch when the key goes down, in cents. Signed: negative starts
+     * flat and rises to pitch, positive starts sharp and falls to it. See WarpCentsPerUnit
+     * above for the measurement.
+     */
+    inline double warpCents (int velToWarp, int depth, double velocity)
+    {
+        const double d = clamp (static_cast<double> (depth), -50.0, 50.0);
+        if (d == 0.0) return 0.0;                 // a depth of nothing bends nothing
+
+        const double v = clamp (static_cast<double> (velToWarp), 0.0, 99.0);
+        const double scale = v == 0.0 ? 1.0
+                                      : (v / 99.0) * (clamp (velocity, 0.0, 127.0) / 127.0);
+
+        return WarpCentsPerUnit * d * scale;
+    }
+
+    /// The bend's time constant in seconds, from WarpTime.
+    inline double warpSeconds (double stored)
+    {
+        const double v = clamp (stored, 0.0, 99.0);
+        double seconds = WarpTime[WarpTimeCount - 1].seconds;
+
+        for (int i = 1; i < WarpTimeCount; ++i)
+        {
+            if (v > WarpTime[i].stored)
+                continue;
+
+            const double lo   = WarpTime[i - 1].seconds;
+            const double hi   = WarpTime[i].seconds;
+            const double span = WarpTime[i].stored - WarpTime[i - 1].stored;
+            const double t    = span == 0 ? 0 : (v - WarpTime[i - 1].stored) / span;
+
+            seconds = lo * std::pow (hi / lo, t);      // straight in log time
+            break;
+        }
+
+        return seconds;
+    }
+
+    /*
+     * The playback-rate multiplier Warp applies `t` seconds into a note.
+     *
+     * The bend is exponential - traced against a fitted curve it holds to 2-3% from full depth
+     * down to a tenth of it - so this is the whole shape, and 1.0 once it has decayed away.
+     */
+    /*
+     * The pitch wheel as a multiplier on the playback rate.
+     *
+     * `wheel` is the MIDI value, 0..16383, resting at 8192. `range` is the machine's MIDI page
+     * setting in semitones, 1 to 12.
+     *
+     * THE TWO HALVES ARE NOT THE SAME WIDTH. There are 8192 steps below the centre and 8191
+     * above it, so dividing by 8192 in both directions leaves a full upward bend one step
+     * short of the range. Inaudible, and wrong - and the kind of wrong that never gets found
+     * later because nobody measures a wheel at its stop.
+     *
+     * The range is a setting of the MACHINE, not of a programme, so nothing reads it off a
+     * disk: the OVERALL SETTINGS file that would hold it is written only when somebody saves
+     * it deliberately. The plugin owns it as a parameter.
+     */
+    inline double bendRatio (int wheel, double range)
+    {
+        const int w = wheel < 0 ? 0 : (wheel > 16383 ? 16383 : wheel);
+        const double off = w - 8192;
+        if (off == 0.0 || range == 0.0) return 1.0;
+
+        const double semis = range * (off >= 0 ? off / 8191.0 : off / 8192.0);
+        return std::pow (2.0, semis / 12.0);
+    }
+
+    inline double warpRatio (int velToWarp, int depth, int time, double velocity, double t)
+    {
+        const double cents = warpCents (velToWarp, depth, velocity);
+        if (cents == 0.0) return 1.0;
+
+        return std::pow (2.0, cents * std::exp (-t / warpSeconds (time)) / 1200.0);
+    }
+
+    /*
+     * The attack byte a strike of this velocity actually plays - keygroup byte 9 applied.
+     *
+     * MEASURED, run 7. A harder strike makes the attack SHORTER, and it does it by plain
+     * subtraction from the attack byte, before the counter ever sees it:
+     *
+     *     effective = attack - (velocity / 127) * velToAttack        clamped 0..99
+     *
+     * Eleven clips on one disk, a base attack of 70, depths of 0, 30, 75 and 99. In the
+     * region where VcaAttackSteps is itself measured every one lands within a single counter
+     * step, which is all the resolution a counter has:
+     *
+     *     depth  vel   effective byte   measured n   the table
+     *        99    1             69.2          4.0           4
+     *        99   16             57.5          7.0           6
+     *        99   32             45.1         11.0          12
+     *        99   48             32.6         22.0          23
+     *        30  127             40.0         14.1          15
+     *         0    1 / 127       70.0     4.0 / 4.0          4
+     *
+     * There is no pivot. Velocity to FILTER turns about 65 - a soft strike goes down where a
+     * hard one goes up - and the obvious guess was that the attack did the same. It does not:
+     * at full depth velocity 1 played 1.344 s against a base of 1.350, so a soft strike leaves
+     * the byte alone. A pivot at 64 would have put velocity 1 at a negative byte, which is to
+     * say gated, and the recording has a second of ramp on it.
+     *
+     * The panel writes this byte one to one. Setting velocity sensitivity for attack to 91 on
+     * the machine and saving put exactly 91 into byte 9 - no scale, no offset - and the same
+     * save put 17 into byte 10 from a panel reading of 17. So the number on the panel IS the
+     * number in the record, and a depth read off a real disk means what it says.
+     *
+     * That is worth stating because a panel reading taken before the flip-and-diff suggested
+     * otherwise: 46 was read off a keygroup this disk stores as 99. The diff is the stronger
+     * evidence - it changes one field at a time and reads the result out of the bytes - and
+     * the measurement agrees with it independently. By velocity 80 the attack is down to
+     * 0.020 s, a shift of some 62 byte units, and a depth of 46 could not shift more than 46
+     * even at full velocity. Whatever that reading was, it was not this field.
+     */
+    inline double velocityAttackByte (double stored, double depth, double velocity)
+    {
+        const double vel = clamp (velocity, 0.0, 127.0);
+        return clamp (stored - (vel / 127.0) * clamp (depth, 0.0, 99.0), 0.0, 99.0);
+    }
+
+    /*
+     * The release byte a strike of this velocity plays - byte 10 and flag 0x10 applied.
+     *
+     * MEASURED, run 9. Unlike the attack, this one PIVOTS, and about velocity 64:
+     *
+     *     effective = release + 2 * velToRelease * (velocity - 64) / 63    clamped 0..99
+     *
+     * Eighteen clips, a base release of 70, depths of +25, -25, +12, -12 and 0, at up to five
+     * velocities each. Time from key-up to 40 dB down:
+     *
+     *     depth    vel 1    vel 32    vel 64    vel 96   vel 127
+     *      +25      42ms     195ms    1349ms    8272ms   11162ms
+     *      -25   11093ms    8325ms    1354ms     194ms      41ms
+     *      +12     224ms         -    1365ms         -    6994ms
+     *      -12    7081ms         -    1337ms         -     219ms
+     *        0    1366ms         -         -         -    1354ms
+     *
+     * Four open questions closed by that table:
+     *
+     *   THE PIVOT is 64. Every clip at velocity 64 lands on the depth-0 value to within 15 ms
+     *   whatever the depth, and fitting the pivot freely gives 64 exactly.
+     *   THE SIGN simply negates - read the -25 row backwards against +25 forwards.
+     *   THE DEPTH is linear: 12 gives half the slope of 25, to 2%.
+     *   THE MULTIPLIER is 2, not 1. Depth 25 swings the byte from 20 to 99, not 45 to 95.
+     *   Fitted freely it is 2.05; 1.5 and 2.5 are both far worse.
+     *
+     * The control passes: depth 0 reads 1366 ms at velocity 1 and 1354 ms at 127, so the
+     * enable bit alone does nothing.
+     *
+     * WITH THE SWITCH OFF, EVERY NOTE IS RELEASED AS THOUGH ITS VELOCITY WERE 1. That is
+     * measured, and it is why this parameter looked inert for two runs: run 7 had bit 0x10
+     * clear on every keygroup, as do all 1908 in the real library, and read the same release
+     * at velocity 1 and 127 for depths of -50, 0 and +50. Those readings are what this rule
+     * gives at velocity 1 - -50 clamps to 99 and takes eleven seconds, +50 clamps to 0 and is
+     * instant. Only the two extremes were tried with the switch off, so "treated as velocity
+     * 1" is the simplest thing that fits, not the only one.
+     */
+    inline double velocityReleaseByte (double stored, double depth, double velocity,
+                                       bool switchOn)
+    {
+        const double vel = switchOn ? clamp (velocity, 0.0, 127.0) : 1.0;
+        return clamp (stored + 2.0 * depth * (vel - 64.0) / 63.0, 0.0, 99.0);
+    }
+
     inline double vcaAttackSeconds (double stored)
     {
         const double v = clamp (stored, 0.0, 99.0);

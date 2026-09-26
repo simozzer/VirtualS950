@@ -91,6 +91,9 @@ namespace s950
          */
         void setTrims (const Trims& set) { trims = set; }
 
+        /// The pitch wheel as a rate multiplier. Reaches a note already sounding, unlike velocity.
+        void setBend (double ratio) { wheelBend = ratio; }
+
         /// Let go of the key. The note falls at its own release rate.
         void release();
 
@@ -104,7 +107,20 @@ namespace s950
          * clear two voices held their phase to within 3 degrees over six seconds, and with
          * it set they ran at rates 3.5% apart and drifted a whole turn in the same six.
          */
-        void render (float* buffer, int count, double sharedPhase);
+        /// Mono, as it always was: full gain into one buffer.
+        void render (float* buffer, int count, double sharedPhase)
+        {
+            render (buffer, nullptr, count, sharedPhase);
+        }
+
+        /*
+         * Stereo, with the keygroup's output port deciding which side it lands on.
+         *
+         * A null `right` is the mono path and is bit-identical to what it always did - the pan
+         * gains are ignored and the sample goes into `left` at full level. Only a caller with
+         * two channels pays for the second write.
+         */
+        void render (float* left, float* right, int count, double sharedPhase);
 
     private:
         /// How often the modulators are recomputed. 32 at 48 kHz is 0.67 ms.
@@ -191,6 +207,13 @@ namespace s950
 
         double sampleRate = 48000.0;
         double pos        = 0.0;     // where we are in the sample, in frames
+        int    dir        = 1;       // +1 forwards, -1 back; only an alternating loop flips it
+
+        /// The pitch wheel as a rate multiplier, set by the engine once per stretch. 1.0 at
+        /// rest. Named for the wheel rather than "bend", because the LFO's own multiplier
+        /// inside render() is already called that and one shadowing the other would be a bug
+        /// waiting to be written.
+        double wheelBend  = 1.0;
         double step       = 1.0;     // frames per output sample, before the LFO
         double leaveRate  = 40000.0; // the rate the audio leaves at, for the filter ceiling
 
@@ -259,6 +282,13 @@ namespace s950
         // the LFO
         double lfoCents = 0.0, lfoPhase = 0.0, lfoStep = 0.0;
         double fadeSeconds = 0.0, fadeT = 0.0;
+
+        /// Seconds since the key went down. Warp's bend is measured from there, and `t` cannot
+        /// serve because it restarts at every envelope stage.
+        double sinceOn = 0.0;
+
+        /// Where the keygroup's output port puts this voice. See cal::outputGains.
+        double outL = 1.0, outR = 1.0;
         double wheelCents  = 0.0;    // kept so adopt() can add it back to a new depth
         bool   ownLfo = true;
     };

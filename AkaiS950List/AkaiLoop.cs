@@ -60,6 +60,65 @@ namespace AkaiS950List
         }
 
         /// <summary>
+        /// The sample page's TIME DIRECTION: 'N' normal or 'R' reverse, header byte 0x2B.
+        ///
+        /// IT IS A DESTRUCTIVE EDIT, NOT A PLAYBACK FLAG. Measured, not assumed: a sample
+        /// whose data is written forwards, with 0x2B set to 'R', plays forwards on the
+        /// hardware - one-shot and looping alike, tested with a struck note that falls 52 dB
+        /// in half a second and would climb those 52 dB if anything reversed it. So the panel
+        /// rewrites the audio backwards and keeps 0x2B as a record of what it did, and so
+        /// does this.
+        ///
+        /// Setting the byte alone would be worse than useless: it would mark a sample as
+        /// reversed while it went on playing forwards, and leave a disk contradicting itself.
+        ///
+        /// THE LOOP POINTS MOVE WITH THE AUDIO, AND THAT PART IS A CHOICE. The reversal is
+        /// measured; what the machine does to a loop when it reverses is not, and the library
+        /// cannot say - LoopEnd equals the sample length in only 78% of the 1110 samples, so
+        /// there is no invariant to appeal to, and PHONE 3, the one reversed sample there is,
+        /// has a loop almost certainly set after it was reversed. So the loop is mapped to
+        /// cover the SAME AUDIO backwards, because leaving the frame numbers alone would
+        /// point a sustained sample's loop at what used to be its attack. One save on the
+        /// hardware would settle it: loop a sample short of its end, reverse it on the panel,
+        /// and read the three loop fields back.
+        /// </summary>
+        public void SetSampleDirection(AkaiEntry e, char direction)
+        {
+            direction = char.ToUpperInvariant(direction);
+            if (direction != 'N' && direction != 'R')
+                throw new ArgumentOutOfRangeException("direction", "a time direction is N or R");
+
+            char was = e.LoopDirection == 0 ? 'N' : char.ToUpperInvariant(e.LoopDirection);
+            if (was == direction) return;
+
+            short[] w = SampleWords12(e);
+            int n = w.Length;
+            if (n < 2) throw new InvalidOperationException("there is no audio to reverse");
+
+            var back = new short[n];
+            for (int i = 0; i < n; i++) back[i] = w[n - 1 - i];
+
+            // a frame at i becomes n-1-i, so a region [a, b) becomes [n-b, n-a)
+            long end = e.LoopEnd, len = e.LoopLength;
+            long from = Math.Max(e.LoopStart, end - len);
+            long newEnd = end, newStart = e.LoopStart;
+
+            if (len > 0 && end > 0 && end <= n && from < end)
+            {
+                newEnd = n - from;
+                newStart = n - end;
+            }
+
+            RewriteSample(e, back, n, e.SampleRate, newEnd, newStart, len);
+
+            AkaiEntry now = EntryAt(e.Slot) ?? e;
+            PokeFile(now, 0x2B, (byte)direction);
+
+            Modified = true;
+            ParseDirectory();
+        }
+
+        /// <summary>
         /// Where a sample loops. The machine plays end-length .. end, and the loop start
         /// field is left at 0 in three quarters of the library, so that is what this
         /// writes: the end, the length, and a start of 0. Anything reading a loop honours

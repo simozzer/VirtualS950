@@ -354,6 +354,15 @@ namespace AkaiS950Studio
                 VelToFilter = kg.VelToFilter,
                 KeyToFilter = kg.KeyToFilter,
                 VelToLoudness = kg.VelToLoudness,
+                VelToAttack = kg.VelToAttack,
+                VelToRelease = kg.VelToRelease,
+                VelocityReleaseOn = kg.VelocityReleaseOn,
+
+                WarpVelocity = kg.WarpVelocity,
+                WarpDepth = kg.WarpAttackOffset,
+                WarpTime = kg.WarpTime,
+
+                OutputPort = kg.OutputPort,
 
                 LfoDelay = kg.LfoDelay, LfoRate = kg.LfoRate, LfoDepth = kg.LfoDepth,
                 LfoModwheelDepth = kg.LfoModwheelDepth, LfoDesync = kg.LfoDesync,
@@ -393,6 +402,7 @@ namespace AkaiS950Studio
                 SourceRate = e.SampleRate < 1000 ? 40000 : e.SampleRate,
                 RootPitch = e.NominalPitch + e.FinePitch / 16.0,
                 Loops = loops && to > from,
+                Alternates = e.LoopMode == 'A',
                 LoopFrom = from,
                 LoopTo = to
             };

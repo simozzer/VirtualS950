@@ -94,6 +94,105 @@ static class ReferenceDump
         s.AppendLine("    };");
         s.AppendLine();
 
+        // ------------------------------------------------- velocity to attack, byte 9
+
+        /*
+         * The whole thing end to end - the subtraction AND the counter it feeds - because
+         * that is what a voice hears and it is where a port can go wrong in two ways that
+         * cancel in the middle. Four attack bytes against four depths against the eight
+         * velocities run 7 actually played.
+         */
+        s.AppendLine("    // velocityAttackByte + vcaAttackSeconds -> the attack a strike plays");
+        s.AppendLine("    struct VelAttack { int stored, depth, velocity; double seconds; };");
+        s.AppendLine();
+        s.AppendLine("    inline constexpr VelAttack velAttacks[] =");
+        s.AppendLine("    {");
+
+        foreach (int att in new[] { 0, 30, 70, 99 })
+            foreach (int dep in new[] { 0, 30, 75, 99 })
+                foreach (int vel in new[] { 1, 16, 32, 48, 64, 80, 96, 127 })
+                    s.AppendLine("        { " + att + ", " + dep + ", " + vel + ", " +
+                                 F(Cal.VcaAttackSeconds(
+                                       Cal.VelocityAttackByte(att, dep, vel))) + " },");
+
+        s.AppendLine("    };");
+        s.AppendLine();
+
+        // ------------------------------------------------ velocity to release, byte 10
+
+        /*
+         * Both states of the enable bit, because "off" is not "no effect" - it is the whole
+         * depth applied as though the note were struck at velocity 1, and a port that treated
+         * it as a no-op would pass every test that only ever set the bit.
+         */
+        s.AppendLine("    // velocityReleaseByte + envSeconds -> the release a strike plays");
+        s.AppendLine("    struct VelRelease { int stored, depth, velocity; bool on; double seconds; };");
+        s.AppendLine();
+        s.AppendLine("    inline constexpr VelRelease velReleases[] =");
+        s.AppendLine("    {");
+
+        foreach (int rel in new[] { 0, 40, 70, 99 })
+            foreach (int dep in new[] { -50, -25, -12, 0, 12, 25, 50 })
+                foreach (int vel in new[] { 1, 32, 64, 96, 127 })
+                    foreach (bool on in new[] { true, false })
+                        s.AppendLine("        { " + rel + ", " + dep + ", " + vel + ", " +
+                                     (on ? "true" : "false") + ", " +
+                                     F(Cal.EnvSeconds(
+                                           Cal.VelocityReleaseByte(rel, dep, vel, on))) + " },");
+
+        s.AppendLine("    };");
+        s.AppendLine();
+
+        // ----------------------------------------------------------- WARP, bytes 12/13/14
+
+        /*
+         * The whole thing end to end - depth, velocity scaling and the decay - at several
+         * points along the bend, because a port can get the shape right and the clock wrong
+         * and every reading at t=0 would still agree.
+         *
+         * byte 12 = 0 is in the grid deliberately: it means "always full depth", not "no
+         * depth", and a port that treated it as a multiplier of zero would silence 22 real
+         * keygroups while passing any test that only ever set it above zero.
+         */
+        s.AppendLine("    // warpRatio -> the playback-rate multiplier t seconds into a note");
+        s.AppendLine("    struct Warp { int velWarp, depth, time; double velocity, t, ratio; };");
+        s.AppendLine();
+        s.AppendLine("    inline constexpr Warp warps[] =");
+        s.AppendLine("    {");
+
+        foreach (int vw in new[] { 0, 25, 50, 99 })
+            foreach (int dep in new[] { -50, -25, 0, 25, 50 })
+                foreach (int tm in new[] { 0, 50, 99 })
+                    foreach (int vel in new[] { 1, 64, 127 })
+                        foreach (double t in new[] { 0.0, 0.02, 0.1, 0.5 })
+                            s.AppendLine("        { " + vw + ", " + dep + ", " + tm + ", " +
+                                         F(vel) + ", " + F(t) + ", " +
+                                         F(Cal.WarpRatio(vw, dep, tm, vel, t)) + " },");
+
+        s.AppendLine("    };");
+        s.AppendLine();
+
+        // ------------------------------------------------------------- the pitch wheel
+
+        /*
+         * Both stops included on purpose. A full bend is where the two halves of the wheel
+         * being different widths shows up - 8192 steps below centre, 8191 above - and it is
+         * the one place nobody thinks to check.
+         */
+        s.AppendLine("    // bendRatio (wheel, range) -> playback rate multiplier");
+        s.AppendLine("    struct Bend { int wheel; double range, ratio; };");
+        s.AppendLine();
+        s.AppendLine("    inline constexpr Bend bends[] =");
+        s.AppendLine("    {");
+
+        foreach (int range in new[] { 1, 2, 3, 5, 7, 12 })
+            foreach (int wheel in new[] { 0, 1, 2048, 4096, 8191, 8192, 8193, 12288, 16382, 16383 })
+                s.AppendLine("        { " + wheel + ", " + F(range) + ", " +
+                             F(Cal.BendRatio(wheel, range)) + " },");
+
+        s.AppendLine("    };");
+        s.AppendLine();
+
         // -------------------------------------------------------------------- the LFO
 
         s.AppendLine("    // the LFO rate in hertz, from the stored byte");

@@ -33,6 +33,22 @@ namespace s950
          * zero in 250 of the library's 324 looped samples.
          */
         int  loopFrom = 0, loopTo = 0;
+
+        /*
+         * Loop mode 'A': forward, then backward, then forward again.
+         *
+         * MEASURED, run 13. A loop of N frames comes round every 2N, not 2N-2 - the frame at
+         * each end is played twice as the direction turns rather than once. Four lengths from
+         * 20 frames to 128 were played on the hardware and every one autocorrelated at exactly
+         * 2N with a coefficient of 0.9996 or better, while the forward controls gave exactly N.
+         * On a short loop that is the difference between a tenth of a semitone right and wrong,
+         * which is why it was measured rather than chosen.
+         *
+         * 18 of the 1110 samples on the real disks use it, and they are the ones where it
+         * shows: cymbals, sustained strings and piano, and ambient beds - WIND, RAIN, THUNDER,
+         * WATER, INSECTS, TRAFFIC, JET.
+         */
+        bool alternates = false;
         bool loops    = false;
 
         /// How many samples of the loop join were crossfaded, or 0 for a plain splice.
@@ -79,6 +95,25 @@ namespace s950
         int  vcfAmount  = 0;             // signed, -50..+50
 
         int velToFilter = 0, keyToFilter = 0, velToLoudness = 0;
+
+        /// Byte 9: how far a hard strike shortens the attack. See cal::velocityAttackByte.
+        int velToAttack = 0;
+
+        /// Byte 10, signed: which way velocity moves the release. See cal::velocityReleaseByte.
+        int velToRelease = 0;
+
+        /// Byte 18 bit 4. Clear means every note releases as though struck at velocity 1,
+        /// which is not the same as no effect at all.
+        bool velocityReleaseOn = false;
+
+        /// WARP, bytes 12/13/14: a pitch bend at note-on. See cal::warpRatio. 13 is the depth
+        /// and is signed; 12 is how far velocity scales it, 0 meaning always full; 14 is the
+        /// time constant.
+        int warpVelocity = 0, warpDepth = 0, warpTime = 0;
+
+        /// Byte 19 + 1: 0 ALL, 1..8 the individual outputs, 9 LEFT, 10 RIGHT.
+        /// See cal::outputGains.
+        int outputPort = 0;
 
         int  lfoDelay = 0, lfoRate = 0, lfoDepth = 0, lfoModwheelDepth = 0;
         bool lfoDesync = true;           // set in 1652 keygroups of 1908

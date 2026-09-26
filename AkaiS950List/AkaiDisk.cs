@@ -406,6 +406,24 @@ namespace AkaiS950List
             public int VelToRelease;    // byte 10, signed, spans exactly -50..+50
             public int VelToLoudness;   // byte 11
 
+            /// <summary>
+            /// Byte 19: which output the keygroup goes to. Panel value, and the byte stores
+            /// it one lower - so ALL is stored as -1 (255), which is the default in 1617 of
+            /// the 1908 library keygroups.
+            ///
+            ///     0        ALL
+            ///     1 .. 8   MONO 1 to MONO 8, the individual outputs
+            ///     9        LEFT
+            ///    10        RIGHT
+            ///
+            /// Read off the panel, and every one of the 1908 keygroups lands inside that
+            /// range under this mapping. Only drum and percussion programmes set it, which is
+            /// what you would expect of individual outputs - and TUBULAR 2 reads L L L L R R
+            /// R R, bells spread across the stereo field, while PIZ-CHORUS is two keygroups
+            /// one each side.
+            /// </summary>
+            public int OutputPort;
+
             // Byte 10. Confirmed on the panel: DSKA0006 'DRUM-1' keygroup 4 reads
             // VEL SENS release -50 and stores 206. It is 0 in all but 20 of 1899
             // keygroups, which is why it took a deliberately chosen program to see.
@@ -436,8 +454,21 @@ namespace AkaiS950List
             /// <summary>Byte 18 bit 3: play the sample through, ignoring key release.</summary>
             public bool OneShot { get { return (Flags & 0x08) != 0; } }
 
+            /// <summary>
+            /// Byte 18 bit 4: the ON/OFF beside Release on the velocity page.
+            ///
+            /// Found by diffing a disk saved either side of flipping it, then confirmed by a
+            /// second save that changed it alongside two other fields and moved no other bit.
+            /// It enables <see cref="VelToRelease"/>: with it clear, every note is released as
+            /// though its velocity were 1, which is why byte 10 looked like a fixed offset
+            /// through two calibration runs. See Cal.VelocityReleaseByte.
+            ///
+            /// Clear in all 1908 keygroups of the library, so nothing in it uses this.
+            /// </summary>
+            public bool VelocityReleaseOn { get { return (Flags & 0x10) != 0; } }
+
             // Bit 1 is set in exactly one keygroup of 1908 and is unidentified.
-            // Bits 4..7 are never set.
+            // Bits 5..7 are never set.
 
             // Byte 19. The panel value is this byte plus one, with 0xFF wrapping to 0:
             // 0 = all, 1..8 = the individual mono outputs, 9 = left, 10 = right. All
@@ -589,6 +620,7 @@ namespace AkaiS950List
 
                     VelToFilter = raw[7], VelToAttack = raw[9],
                     VelToRelease = (sbyte)raw[10], VelToLoudness = raw[11],
+                    OutputPort = (sbyte)raw[19] + 1,
                     KeyToFilter = raw[8],
 
                     WarpVelocity = raw[12], WarpAttackOffset = (sbyte)raw[13], WarpTime = raw[14],

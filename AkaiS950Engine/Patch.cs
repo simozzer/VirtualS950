@@ -26,6 +26,24 @@ namespace AkaiS950Engine
         public int LoopFrom, LoopTo;
         public bool Loops;
 
+        /// <summary>
+        /// Loop mode 'A': the loop runs forward, then backward, then forward again.
+        ///
+        /// MEASURED, run 13. A loop of N frames comes round every 2N, not 2N-2 - the frame at
+        /// each end is played twice as the direction turns rather than once. Four loop lengths
+        /// from 20 frames to 128 were played on the hardware and every one autocorrelated at
+        /// exactly 2N with a coefficient of 0.9996 or better, while the forward controls gave
+        /// exactly N. That is the difference between a tenth of a semitone right and wrong on
+        /// a short loop, which is why it was measured rather than chosen.
+        ///
+        /// 18 of the 1110 samples on the real disks use it, and they are the ones where it
+        /// shows: cymbals and crashes, sustained strings and piano, and ambient beds - WIND,
+        /// RAIN, THUNDER, WATER, INSECTS, TRAFFIC, JET. Alternating is there to hide the seam
+        /// on a long texture, so playing one forward-only puts back the click it was chosen
+        /// to avoid.
+        /// </summary>
+        public bool Alternates;
+
         /// <summary>How many samples of the loop join were crossfaded, or 0 for a plain splice.</summary>
         public int LoopSmoothed;
     }
@@ -68,6 +86,25 @@ namespace AkaiS950Engine
         public int VcfAmount;            // signed, -50..+50
 
         public int VelToFilter, KeyToFilter, VelToLoudness;
+
+        /// <summary>Byte 9: how far a hard strike shortens the attack. See Cal.VelocityAttackByte.</summary>
+        public int VelToAttack;
+
+        /// <summary>Byte 10, signed: which way velocity moves the release. See Cal.VelocityReleaseByte.</summary>
+        public int VelToRelease;
+
+        /// <summary>Byte 18 bit 4: the velocity page's ON/OFF. Clear means every note releases
+        /// as though struck at velocity 1 - which is not the same as no effect at all.</summary>
+        public bool VelocityReleaseOn;
+
+        /// <summary>WARP, bytes 12/13/14: a pitch bend at note-on. See Cal.WarpRatio.
+        /// 13 is the depth and is signed; 12 is how far velocity scales it, with 0 meaning
+        /// always full; 14 is the time constant.</summary>
+        public int WarpVelocity, WarpDepth, WarpTime;
+
+        /// <summary>Byte 19 + 1: 0 ALL, 1..8 the individual outputs, 9 LEFT, 10 RIGHT.
+        /// See Cal.OutputGains.</summary>
+        public int OutputPort;
 
         public int LfoDelay, LfoRate, LfoDepth, LfoModwheelDepth;
         public bool LfoDesync = true;    // set in 1652 keygroups of 1908

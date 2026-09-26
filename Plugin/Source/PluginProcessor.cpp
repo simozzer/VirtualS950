@@ -32,6 +32,28 @@ VirtualS950Processor::describeParameters()
             [] (float v, int) { return juce::String (v, 2); })));
 
     /*
+     * How far the pitch wheel bends, in semitones.
+     *
+     * The machine has this on its MIDI page with a range of 1 to 12, and it belongs to the
+     * MACHINE rather than to a programme - so it is not on any disk we could read it from.
+     * The OVERALL SETTINGS file that would hold it is written only when somebody saves it
+     * deliberately, and none of the calibration disks has one.
+     *
+     * An integer parameter because the panel's is: the machine offers whole semitones and
+     * nothing between, so a continuous control would invite settings the hardware cannot
+     * hold. Two is the default here because it is what almost everything defaults to; the
+     * one real unit to hand is set to seven, and 80 of the 99 OVERALL SETTINGS files in the
+     * library read 7 at the byte that is most likely to be this - which is suggestive but
+     * not yet measured, so it does not get to pick the default.
+     */
+    layout.add (std::make_unique<juce::AudioParameterInt> (
+        juce::ParameterID { "bendRange", 1 },
+        "Bend Range",
+        1, 12, 2,
+        juce::AudioParameterIntAttributes().withStringFromValueFunction (
+            [] (int v, int) { return juce::String (v) + (v == 1 ? " semitone" : " semitones"); })));
+
+    /*
      * The two filter trims, which apply to every keygroup of whatever programme is playing.
      *
      * Offsets rather than absolute settings, and centred on zero. A programme carries its
@@ -243,6 +265,7 @@ VirtualS950Processor::VirtualS950Processor()
       parameters (*this, nullptr, "state", describeParameters())
 {
     gainParameter = parameters.getRawParameterValue ("gain");
+    bendRangeParameter = parameters.getRawParameterValue ("bendRange");
 
     using AT = s950::Engine::AtomicTrims;
 
@@ -318,7 +341,8 @@ void VirtualS950Processor::prepareToPlay (double sampleRate, int samplesPerBlock
 
     // processBlock must not allocate, so the scratch buffer is sized here. A little over,
     // because some hosts hand over a longer block than they promised.
-    mono.setSize (1, juce::jmax (samplesPerBlock, 1024), false, true, true);
+    // Two channels: a keygroup can be sent to LEFT or RIGHT, so the engine fills both.
+    mono.setSize (2, juce::jmax (samplesPerBlock, 1024), false, true, true);
 }
 
 bool VirtualS950Processor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -372,6 +396,11 @@ void VirtualS950Processor::processBlock (juce::AudioBuffer<float>& buffer,
     engine->gain.store (gainParameter != nullptr ? gainParameter->load() : 0.7f,
                         std::memory_order_relaxed);
 
+    // Before the messages, so a bend arriving in this block is read against the range the
+    // host has set for it rather than the one from last time.
+    engine->bendRange.store (bendRangeParameter != nullptr ? bendRangeParameter->load() : 2.0f,
+                             std::memory_order_relaxed);
+
     /*
      * Every message, with where in this block it happens.
      *
@@ -390,6 +419,8 @@ void VirtualS950Processor::processBlock (juce::AudioBuffer<float>& buffer,
             engine->noteOff (m.getNoteNumber(), at);
         else if (m.isController() && m.getControllerNumber() == 1)
             engine->modwheel (m.getControllerValue(), at);
+        else if (m.isPitchWheel())
+            engine->pitchBend (m.getPitchWheelValue(), at);
         else if (m.isAllNotesOff() || m.isAllSoundOff())
             engine->allNotesOff (at);
         else if (m.isController())
@@ -419,16 +450,27 @@ void VirtualS950Processor::processBlock (juce::AudioBuffer<float>& buffer,
         if (t.value != nullptr)
             (engine->trims.*(t.target)).store (t.value->load(), std::memory_order_relaxed);
 
-    // The engine is mono - the machine was, through one output - so it renders once and the
-    // same signal goes to both channels.
-    if (mono.getNumSamples() < count)
-        mono.setSize (1, count, false, true, true);     // only if a host broke its promise
+    /*
+     * Two channels, because a keygroup can be sent to LEFT or RIGHT.
+     *
+     * This used to render once and copy the same signal to both, which is right for almost
+     * every programme - the machine is mono through its main pair unless a keygroup says
+     * otherwise. 38 keygroups across four library programmes do say otherwise: TUBULAR 2
+     * spreads its bells L L L L R R R R and came out dead centre here.
+     *
+     * The scratch buffer is two channels now and the engine fills both. A host that hands us
+     * one channel still works: it gets the left side, which is what a mono host would get out
+     * of the machine's left socket.
+     */
+    if (mono.getNumSamples() < count || mono.getNumChannels() < 2)
+        mono.setSize (2, count, false, true, true);     // only if a host broke its promise
 
-    float* scratch = mono.getWritePointer (0);
-    engine->render (scratch, count);
+    float* leftScratch  = mono.getWritePointer (0);
+    float* rightScratch = mono.getWritePointer (1);
+    engine->render (leftScratch, rightScratch, count);
 
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-        buffer.copyFrom (ch, 0, scratch, count);
+        buffer.copyFrom (ch, 0, ch == 1 ? rightScratch : leftScratch, count);
 }
 
 // ------------------------------------------------------------------------- the state

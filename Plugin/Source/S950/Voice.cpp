@@ -22,6 +22,7 @@ namespace s950
         step      = sound->sourceRate / sampleRate * ratio;
         leaveRate = sound->sourceRate * ratio;
         pos       = 0.0;
+        dir       = 1;               // forwards until an alternating loop turns it round
 
         // --- amplitude envelope. Only the peak is fixed at the strike: it is what the
         // velocity and the zone trim decided, and no control moves it afterwards.
@@ -70,6 +71,11 @@ namespace s950
         ownLfo     = group.lfoDesync;
         lfoPhase   = 0.0;
         fadeT      = 0.0;
+        sinceOn    = 0.0;
+
+        // Which output the keygroup goes to. Settled at the strike, like the peak: nothing
+        // moves a sounding note from one socket to another on the machine either.
+        cal::outputGains (group.outputPort, outL, outR);
         applyLfo();
     }
 
@@ -126,9 +132,21 @@ namespace s950
      */
     void Voice::applyTrims()
     {
-        attack      = cal::vcaAttackSeconds (trimmed (kg->vcaAttack, trims.vcaAttack));
+        /*
+         * The trim first, then velocity on top of it. The trim is the player's offset from
+         * what the disk says, so it is part of "the attack this voice is set to" - and byte 9
+         * shortens whatever that turns out to be, exactly as it shortens the disk's own value
+         * on the hardware. Turning the attack knob therefore moves the velocity response with
+         * it rather than fighting it.
+         */
+        attack      = cal::vcaAttackSeconds (
+                          cal::velocityAttackByte (trimmed (kg->vcaAttack, trims.vcaAttack),
+                                                   kg->velToAttack, velocity));
         decay       = cal::envSeconds (trimmed (kg->vcaDecay,   trims.vcaDecay));
-        releaseTime = cal::envSeconds (trimmed (kg->vcaRelease, trims.vcaRelease));
+        releaseTime = cal::envSeconds (
+                          cal::velocityReleaseByte (trimmed (kg->vcaRelease, trims.vcaRelease),
+                                                    kg->velToRelease, velocity,
+                                                    kg->velocityReleaseOn));
 
         const double sustainDb =
             -(1.0 - trimmed (kg->vcaSustain, trims.vcaSustain) / 99.0) * cal::SustainDb;
@@ -224,10 +242,16 @@ namespace s950
         vcfReleaseT    = 0.0;
     }
 
-    void Voice::render (float* buffer, int count, double sharedPhase)
+    void Voice::render (float* left, float* right, int count, double sharedPhase)
     {
         if (stage == Stage::idle)
             return;
+
+        // hoisted out of the sample loop: neither changes while a block renders
+        const bool  stereo = right != nullptr;
+        const float panL   = stereo ? static_cast<float> (outL) : 1.0f;
+        const float panR   = stereo ? static_cast<float> (outR) : 0.0f;
+        float* const buffer = left;
 
         const float* audio = sound->audio.data();
         const int    last  = static_cast<int> (sound->audio.size()) - 1;
@@ -249,7 +273,21 @@ namespace s950
             const double phase = ownLfo ? lfoPhase : sharedPhase;
             const double bend  = cents == 0.0 ? 1.0
                                : std::pow (2.0, cents * std::sin (phase) / 1200.0);
-            const double stepNow = step * bend;
+            /*
+             * WARP rides on top of the LFO, both as multipliers on the playback rate.
+             *
+             * Worked out once a block like everything else here. The bend is fastest at the
+             * very start - 34 ms at byte 14 = 0 - so a long control block steps down it rather
+             * than gliding, which is the trade the LFO already makes and is well under a cent
+             * per step at the block sizes a host asks for.
+             *
+             * Changing the playback rate drags the filter with it for free: the cutoff and the
+             * ceiling both derive from the rate the audio leaves at.
+             */
+            const double warp = cal::warpRatio (kg->warpVelocity, kg->warpDepth, kg->warpTime,
+                                                velocity, sinceOn);
+
+            const double stepNow = step * bend * warp * wheelBend;
 
             double       gainNow  = gain;
             const double gainEnd  = envelopeAfter (n * dt);
@@ -270,7 +308,28 @@ namespace s950
                  * after one pass. In the C# that cost three of the four failures the first
                  * run of EngineCheck reported; do not "tidy" it back.
                  */
-                if (pos >= end)
+                /*
+                 * An ALTERNATING loop turns round at each end instead of wrapping.
+                 *
+                 * Reflecting about the end - pos' = 2*end - pos - is what makes the cycle 2N
+                 * frames with the end frame played twice, which is what the hardware does:
+                 * four loop lengths from 20 to 128 all autocorrelated at exactly 2N, never
+                 * 2N-2. Reflecting about end-1 instead would give 2N-2 and be a tenth of a
+                 * semitone flat on a short loop.
+                 */
+                if (dir < 0 && pos < sound->loopFrom)
+                {
+                    pos = 2.0 * sound->loopFrom - pos;
+                    dir = 1;
+                    if (pos >= end) pos = end - 1;
+                }
+                else if (dir > 0 && pos >= end && loops && sound->alternates)
+                {
+                    pos = 2.0 * end - pos;
+                    dir = -1;
+                    if (pos < sound->loopFrom) pos = sound->loopFrom;
+                }
+                else if (pos >= end)
                 {
                     if (! loops) { stage = Stage::idle; return; }
 
@@ -290,15 +349,18 @@ namespace s950
                 const double frac = pos - i0;
                 const double x    = audio[i0] + (audio[i1] - audio[i0]) * frac;
 
-                buffer[done + j] += static_cast<float> (filter.process (x) * gainNow);
+                const float s = static_cast<float> (filter.process (x) * gainNow);
+                buffer[done + j] += s * panL;
+                if (stereo) right[done + j] += s * panR;
                 gainNow += gainStep;
 
-                pos += stepNow;
+                pos += stepNow * dir;
             }
 
             gain  = gainEnd;
             t     += n * dt;
             fadeT += n * dt;
+            sinceOn += n * dt;
 
             // the filter's clock, which no amplitude stage change resets
             vcfT += n * dt;
@@ -393,7 +455,16 @@ namespace s950
 
             case Stage::release:
                 if (releaseTime <= 0.0005) return 0.0;
-                return fall (releaseFrom, 1e-4, std::min (1.0, at / releaseTime));
+
+                /*
+                 * A RATE: cal::VcaReleaseDb in one release time, from wherever the key came up,
+                 * and it keeps falling. This used to run from releaseFrom to 1e-4 over exactly
+                 * one release time, which is 80 dB from a note at full level - twice the
+                 * machine's speed - and made a quiet note fade in the same wall-clock time as a
+                 * loud one, which is a duration rather than a rate.
+                 */
+                return releaseFrom
+                         * std::pow (10.0, -cal::VcaReleaseDb / 20.0 * (at / releaseTime));
 
             default:
                 return sustain;
@@ -413,7 +484,10 @@ namespace s950
                 break;
 
             case Stage::release:
-                if (t >= releaseTime || gain <= 2e-4) stage = Stage::idle;
+                // The gain alone decides when the note is over. It used to end at
+                // t >= releaseTime as well, which with a RATE cuts the tail off after one
+                // release time however loud the note still is - a click on any long release.
+                if (gain <= 2e-4) stage = Stage::idle;
                 break;
 
             default:

@@ -31,7 +31,8 @@ namespace AkaiS950Engine
         readonly Event[] _ring = new Event[RingSize];
         int _write, _read;
 
-        const byte EvNoteOn = 1, EvNoteOff = 2, EvWheel = 3, EvAllOff = 4, EvRepatch = 5;
+        const byte EvNoteOn = 1, EvNoteOff = 2, EvWheel = 3, EvAllOff = 4, EvRepatch = 5,
+                   EvBend = 6;
 
         Patch _patch;
         long _sequence;
@@ -49,6 +50,7 @@ namespace AkaiS950Engine
         int _startedCount, _startedNote = -1;
         double _sharedPhase, _sharedStep;
         int _wheel;
+        int _bend14 = 8192;          // the pitch wheel, at rest in the middle
 
         public double SampleRate { get; private set; }
 
@@ -117,6 +119,25 @@ namespace AkaiS950Engine
         public void NoteOn(int note, int velocity) { Post(EvNoteOn, note, velocity); }
         public void NoteOff(int note) { Post(EvNoteOff, note, 0); }
         public void Modwheel(int value) { Post(EvWheel, value, 0); }
+
+        /// <summary>
+        /// The pitch wheel, 0..16383 with 8192 at rest. Split across the event's two byte
+        /// fields, because fourteen bits do not fit in one.
+        /// </summary>
+        public void PitchBend(int value)
+        {
+            int v = value < 0 ? 0 : (value > 16383 ? 16383 : value);
+            Post(EvBend, (v >> 7) & 0x7F, v & 0x7F);
+        }
+
+        /// <summary>
+        /// How far the wheel bends, in semitones. The machine's MIDI page offers 1 to 12.
+        ///
+        /// Not read off a disk: it belongs to the machine rather than to a programme, and the
+        /// OVERALL SETTINGS file that would hold it is written only when somebody saves it
+        /// deliberately. Two is the usual default everywhere.
+        /// </summary>
+        public double BendRange = 2.0;
         public void AllNotesOff() { Post(EvAllOff, 0, 0); }
 
         void Post(byte kind, int a, int b)
@@ -144,6 +165,7 @@ namespace AkaiS950Engine
                     case EvNoteOn: StartNote(e.A, e.B); break;
                     case EvNoteOff: StopNote(e.A); break;
                     case EvWheel: _wheel = e.A; break;
+                    case EvBend: _bend14 = (e.A << 7) | e.B; break;
                     case EvRepatch: Repatch(); break;
                     case EvAllOff:
                         for (int i = 0; i < _voices.Length; i++) _voices[i].Release();
@@ -272,9 +294,16 @@ namespace AkaiS950Engine
 
             Array.Clear(buffer, offset, count);
 
+            // The wheel reaches notes already sounding - that is what separates it from
+            // velocity, which is settled when the key goes down.
+            double bendMono = Cal.BendRatio(_bend14, BendRange);
+
             for (int i = 0; i < _voices.Length; i++)
                 if (_voices[i].Active)
+                {
+                    _voices[i].SetBend(bendMono);
                     _voices[i].Render(buffer, offset, count, _sharedPhase);
+                }
 
             _sharedPhase += _sharedStep * count;
             if (_sharedPhase > 2.0 * Math.PI) _sharedPhase %= 2.0 * Math.PI;
@@ -284,6 +313,44 @@ namespace AkaiS950Engine
             {
                 float v = buffer[offset + i] * g;
                 buffer[offset + i] = v > 1f ? 1f : (v < -1f ? -1f : v);
+            }
+        }
+
+        /// <summary>
+        /// Fill <paramref name="count"/> stereo samples, honouring each keygroup's output port.
+        ///
+        /// The machine's LEFT and RIGHT sockets are two mono outputs rather than a pan pot, so
+        /// a keygroup sent to one is absent from the other - 38 keygroups across four library
+        /// programmes, including TUBULAR 2 whose bells read L L L L R R R R. Everything else
+        /// lands on both sides at full level, which is what the mono path has always done.
+        ///
+        /// Allocates nothing. The mono overload above is untouched and still bit-identical.
+        /// </summary>
+        public void Render(float[] left, float[] right, int offset, int count)
+        {
+            DrainEvents();
+
+            Array.Clear(left, offset, count);
+            Array.Clear(right, offset, count);
+
+            double bendStereo = Cal.BendRatio(_bend14, BendRange);
+
+            for (int i = 0; i < _voices.Length; i++)
+                if (_voices[i].Active)
+                {
+                    _voices[i].SetBend(bendStereo);
+                    _voices[i].Render(left, right, offset, count, _sharedPhase);
+                }
+
+            _sharedPhase += _sharedStep * count;
+            if (_sharedPhase > 2.0 * Math.PI) _sharedPhase %= 2.0 * Math.PI;
+
+            float g = Gain;
+            for (int i = 0; i < count; i++)
+            {
+                float l = left[offset + i] * g, r = right[offset + i] * g;
+                left[offset + i]  = l > 1f ? 1f : (l < -1f ? -1f : l);
+                right[offset + i] = r > 1f ? 1f : (r < -1f ? -1f : r);
             }
         }
     }

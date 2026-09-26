@@ -96,6 +96,21 @@ namespace s950
             int velToFilter = 0, keyToFilter = 0, velToLoudness = 0;
             int velToAttack = 0, velToRelease = 0;
 
+            /*
+             * WARP, bytes 12 to 14: a pitch bend at note-on that decays back to pitch. Byte 13
+             * is the DEPTH and is signed; byte 12 is how far velocity scales it, with 0 meaning
+             * always full; byte 14 is the time constant. See cal::warpRatio.
+             */
+            int warpVelocity = 0, warpDepth = 0, warpTime = 0;
+
+            /*
+             * Byte 19: which output the keygroup goes to. The panel value, which the byte
+             * stores one lower - so ALL is -1, the default in 1617 of 1908 keygroups.
+             *
+             *     0 ALL,  1..8 MONO 1 to 8,  9 LEFT,  10 RIGHT
+             */
+            int outputPort = 0;
+
             int lfoDelay = 0, lfoRate = 0, lfoDepth = 0;
             int lfoAftertouchDepth = 0, lfoModwheelDepth = 0;
 
@@ -106,6 +121,14 @@ namespace s950
             bool constantPitch()    const { return (flags & 0x01) != 0; }
             bool lfoDesync()        const { return (flags & 0x04) != 0; }
             bool oneShot()          const { return (flags & 0x08) != 0; }
+
+            /*
+             * Bit 4: the ON/OFF beside Release on the velocity page, found by diffing a disk
+             * saved either side of flipping it. It enables velToRelease - with it clear, every
+             * note is released as though its velocity were 1, which is not the same as no
+             * effect. Clear in all 1908 keygroups of the library.
+             */
+            bool velocityReleaseOn() const { return (flags & 0x10) != 0; }
             bool hasSecondZone()    const { return zone2.inUse(); }
         };
 
