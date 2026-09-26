@@ -334,15 +334,37 @@ and an editor worth looking at — are all done. What is left is measurement, no
    separate 6.0 from 6.5 — rms is 9.3%, 7.3% and 7.2% across those three. The shape, the
    velocity law and the time curve are all measured properly; only this one scale is rounded.
 7. **LFO depth from aftertouch (byte 21) is read and dropped**, and the plugin has no
-   channel-pressure handling at all. It is 0 in every one of the 1908 real keygroups, so
-   nothing on any disk plays wrongly — it would be for your own patches.
+   channel-pressure handling at all.
+
+   This item used to excuse itself: "it is 0 in every one of the 1908 real keygroups, so
+   nothing on any disk plays wrongly". That is the wrong test and it is worth saying why.
+   The 1908 keygroups are **one person's shelf of disks**, and this is a tool other people
+   point at their own libraries. A byte that nobody here happens to set is not a byte nobody
+   sets — it is a byte with no evidence either way, and "no evidence" was being written down
+   as "no problem". Every other gap on this list is ranked by how many library keygroups it
+   touches, which is a fair way to order work and a bad way to decide what counts as a bug.
+
+   The measurement belongs to the LFO rig rather than the envelope one: `lfomidi.js` already
+   emits controllers and `lfocal.js` already reads pitch deviation, so aftertouch is a new
+   event kind (channel pressure, `0xD0`) and a section in `lfoplan.js` beside the modwheel
+   sweep that is already there. The likely answer is that byte 21 behaves exactly as byte 22
+   does with a different source — but that is a guess, and byte 22's own law was measured,
+   so this one can be.
 8. **The eight individual outputs are played centred, which is a guess.** Byte 19 sends a
    keygroup to ALL, to one of MONO 1–8, or hard LEFT or RIGHT. LEFT and RIGHT are modelled;
    MONO 1–8 are centred because nobody has checked what the machine's main stereo pair does
    with a voice routed to an individual socket. If it drops out of the main mix — as it does
    on many samplers of that era — then 253 library keygroups should be silent on the stereo
-   pair rather than centred. One minute with the hardware settles it: set a keygroup to
-   MONO 1, play it, listen to the main outs.
+   pair rather than centred.
+
+   **It needs no cables in the individual outputs.** The question is not what comes out of
+   the MONO 1 socket; it is whether the voice has LEFT the main pair, and that is read on
+   the outputs already connected. Better still as a disk section than by ear: eleven
+   keygroups on one sample, one per setting of byte 19 — ALL, MONO 1 through 8, LEFT, RIGHT
+   — played in turn and read as levels on the main pair. Zero cables, and it separates the
+   three possible answers rather than two, because a voice that is *attenuated* into the
+   main mix rather than removed from it would sound present to the ear and show up plainly
+   as a level.
 
 ## Sample-accurate events
 
