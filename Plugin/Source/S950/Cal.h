@@ -483,26 +483,40 @@ namespace s950::cal
      * with the key at all. 17 library pairs are exactly this, the ARP2600 layers, and
      * treating identical ranges as an overlap to fade across would have half-silenced them.
      *
-     * STILL PROVISIONAL, AND THE ONLY THING LEFT THAT IS. This section is the loudest in the
-     * run - the one place two keygroups both sound at nearly full level, so the tones sum to
-     * the highest crest anywhere - and it is the only section still hitting the recording's
-     * ceiling. The rest of run 15 re-recorded clean; these five clips are 14.5% pinned.
+     * ZERO, AND THE MACHINE'S OWN DISTORTION IS WHAT PROVES IT.
      *
-     * Its readings have moved as the limiting has come off, in one direction:
+     * This read -3.7 dB for a long time, from a take with 25% of its samples pinned. It was
+     * wrong, and how it came out is worth keeping.
      *
-     *     25% pinned (first take)     -3.7 dB apiece
-     *     14.5% pinned (second)       -0.7 dB apiece, the pair summing to +2.3
+     * The section is the loudest in the run - the one place two keygroups both sound at
+     * nearly full level - and it is the ONLY section that kept distorting after the
+     * recording level came down. Dropping the input 2.66 dB left the other three sections
+     * completely clean and changed this one's reading not at all: -0.7 dB apiece and a pair
+     * summing to +2.3, identical to the decimal across both takes, with its ceiling moving
+     * down by exactly the 2.66 dB the input had. A ceiling that scales with the recording
+     * gain is UPSTREAM of it. The S950 is distorting its own output and no recording level
+     * will ever fix it.
      *
-     * A pair at full level sums to +3.0, so the trend says identical ranges are probably NOT
-     * attenuated at all - the machine finds no lower and no upper keygroup, nothing to fade,
-     * and simply layers them. That would remove the special case entirely.
+     * That fact is the measurement. Two equal sources at L dB relative to one of them alone
+     * sum to 3.01 + L, and any compressive distortion can only REDUCE what the pair measures
+     * - intermodulation lands away from either tone's bin, never in it. So the measured sum
+     * is a lower bound:
      *
-     * Not shipped on that: it is a trend across two spoilt takes, not a measurement. -3.7 is
-     * what was read and it stays until a quieter take says otherwise. It is wrong in the
-     * safe direction for the 17 library pairs it applies to - too quiet by a few decibels
-     * rather than too loud.
+     *     sum >= +2.3   ->   L >= -0.71 dB
+     *     a layer cannot be louder than itself alone   ->   L <= 0
+     *
+     * which on the machine's 0.4 dB grid leaves 0 steps or 1, and nothing else. -3.7 would
+     * sum to -0.7 and -3.0 to 0.0; both are ruled out by three decibels.
+     *
+     * So identical ranges are NOT faded: no lower keygroup and no upper one, nothing to fade
+     * across, so the machine simply layers them - which is exactly why two full-level voices
+     * overflow its output and it saturates. 17 library pairs are this, the ARP2600 layers,
+     * and they have been playing 3.7 dB too quiet apiece.
+     *
+     * A step of 0.4 dB is still possible and would need a disk that trims both keygroups
+     * down at source, so the machine is not saturating while it is read.
      */
-    inline constexpr double XfadeSameRangeDb = -3.7;
+    inline constexpr double XfadeSameRangeDb = 0.0;
 
     // crossfadeDb and crossfadeGain live further down, after clamp() is declared.
 

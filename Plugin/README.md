@@ -224,13 +224,15 @@ and an editor worth looking at — are all done. What is left is measurement, no
      the real rule is arithmetic on `i` and `N`, not a function of `x`. Nobody has worked it
      out. Every measured width reproduces its own reading; an unplayed width could be 4 dB
      out near the far edge.
-   - **The identical-range value is the last thing still resting on limited data.**
-     `XfadeSameRangeDb` (−3.7) comes from the one section of run 15 that still hits the
-     ceiling — it is the loudest in the run, two keygroups both at nearly full level, so the
-     tones sum to the highest crest anywhere. Its reading has moved from −3.7 (25% pinned) to
-     −0.7 (14.5% pinned), and a pair at full level sums to +3.0, so identical ranges are
-     probably not attenuated at all. Not shipped on a trend across two spoilt takes; it is
-     wrong in the safe direction meanwhile. One section of a quieter take settles it.
+   - **Identical ranges are not faded at all, and the S950 saturates when they sound.**
+     `XfadeSameRangeDb` is 0 — it was −3.7 from a limited take. The section distorts at any
+     recording level: dropping the input 2.66 dB left every other section clean and changed
+     this one's reading not at all, with its ceiling moving down by the same 2.66 dB, so the
+     distortion is in the machine. That bounds the answer without needing it clean: a pair
+     summing to +2.3 dB, and compression can only lower a sum, puts each layer above
+     −0.71 dB. −3.7 and equal-power −3.0 are both ruled out by three decibels. A single
+     0.4 dB step is still possible and would want a disk that trims both keygroups at source
+     so the machine is not saturating while the ratio is read.
    - **Nobody has measured what byte 21 = 0 does to an overlap.** Both keygroups at full level
      is the assumption and what the engines do. One section on a future disk settles it.
 1. **`ENV_TIME` is about 20% slow around stored 45.** Run 9 measured the release span as a
