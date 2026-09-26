@@ -482,7 +482,27 @@ namespace AkaiS950Engine
         /// for mechanism-shaped numbers - the VCA attack is 5.4/n for whole n. It is not read
         /// to that precision.
         /// </summary>
-        public const double WarpCentsPerUnit = 6.25;
+        /// MEASURED IN RUN 22, which is the first run ever to sweep byte 13 at all.
+        ///
+        /// 6.25 was chosen because it is a sixteenth of a semitone exactly, and the fit
+        /// behind it gave 6.21 and could not separate 6.0 from 6.5. What that fit never did
+        /// was vary the DEPTH: runs 10, 11 and 12 all pinned byte 13 at -50 and swept byte
+        /// 12 and velocity instead, so the depth constant came out sideways from clips
+        /// aimed at something else.
+        ///
+        /// Ten depths, both signs, byte 12 at zero so velocity does not come into it:
+        ///
+        ///     depth    -50   -40   -30   -20   -10    10    20    30    40    50
+        ///     cents   -325  -238  -214  -132   -72    63   122   200   242   330
+        ///
+        /// A line through the origin gives 6.436 cents per unit, residual rms 12 cents,
+        /// standard error 0.114. So 6.0 is 3.8 standard errors away and dead; 6.25 is 1.6
+        /// away and no longer the best estimate; 6.5 is 0.6 away and would also fit.
+        ///
+        /// Not the limiter, before anyone assumes it: clipping a sine does not move its
+        /// zero crossings and the pitch is read by counting them, so runs 10 to 12 being
+        /// limited would barely have touched this. Nobody had varied the byte.
+        public const double WarpCentsPerUnit = 6.44;
 
         /// <summary>
         /// Where a keygroup's output port puts it in the stereo pair, as a left and right gain.

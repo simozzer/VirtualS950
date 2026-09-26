@@ -345,10 +345,44 @@ and an editor worth looking at — are all done. What is left is measurement, no
 5. **The filter attack may quantise like the VCA's** — 5.4/n for whole n — but it was
    measured to about 5%, which is far too coarse to see 0.7% steps, so it keeps the shared
    envelope curve. Not because it is smooth; because nobody has looked.
-6. **Warp's depth constant is a choice within the measurement.** 6.25 cents per unit of byte 13
-   is used because it is a sixteenth of a semitone exactly; the fit gives 6.21 and cannot
-   separate 6.0 from 6.5 — rms is 9.3%, 7.3% and 7.2% across those three. The shape, the
-   velocity law and the time curve are all measured properly; only this one scale is rounded.
+
+5a. **Done — the filter's attack reads the same curve as its decay.** Run 21 measured the
+   filter's decay and release and found both to be rates on a shared clock; the attack had
+   only ever been assumed to match. Run 22 traced it, with three of run 21's decay settings
+   repeated **in the same take** so the comparison did not have to cross two recordings:
+
+   | stored | attack | decay |
+   |---|---|---|
+   | 55 | 0.51 s | 0.51 s |
+   | 65 | 0.82 s | 0.82 s |
+   | 75 | 1.43 s | 1.39 s |
+
+   Identical to 3%. It also gives `VcfTimeScale` a second, independent reading — 0.74 from
+   the attack against run 21's 0.71 ± 0.06 from the decay, which is well inside the spread.
+   Left at 0.71.
+6. **Done — Warp's depth constant is 6.44, measured.** It was 6.25, chosen because it is a
+   sixteenth of a semitone exactly, from a fit that gave 6.21 and could not separate 6.0
+   from 6.5.
+
+   What that fit never did was **vary the depth**. Runs 10, 11 and 12 all pinned byte 13 at
+   −50 and swept byte 12 and velocity instead, so the depth constant came out sideways from
+   clips aimed at something else. Run 22 swept it — ten depths, both signs, byte 12 at zero:
+
+   ```
+   depth    -50   -40   -30   -20   -10    10    20    30    40    50
+   cents   -325  -238  -214  -132   -72    63   122   200   242   330
+   ```
+
+   A line through the origin gives **6.436 ± 0.114**. 6.0 is 3.8 standard errors away and
+   dead; 6.25 is 1.6 away and no longer the best estimate; 6.5 would also fit.
+
+   Worth recording that the limiter is *not* the explanation here, since it has been the
+   explanation for so much else: clipping a sine does not move its zero crossings, and the
+   pitch is read by counting them. Runs 10–12 being the most heavily limited takes in the
+   project barely touched this one. Nobody had varied the byte.
+
+   Run 22 also confirmed `WarpTime` in passing — byte 14 = 50 read 68–72 ms across nine
+   clips against the table's 69.5.
 7. **LFO depth from aftertouch (byte 21) is read and dropped**, and the plugin has no
    channel-pressure handling at all.
 
@@ -373,14 +407,26 @@ and an editor worth looking at — are all done. What is left is measurement, no
    on many samplers of that era — then 253 library keygroups should be silent on the stereo
    pair rather than centred.
 
-   **It needs no cables in the individual outputs.** The question is not what comes out of
-   the MONO 1 socket; it is whether the voice has LEFT the main pair, and that is read on
-   the outputs already connected. Better still as a disk section than by ear: eleven
-   keygroups on one sample, one per setting of byte 19 — ALL, MONO 1 through 8, LEFT, RIGHT
-   — played in turn and read as levels on the main pair. Zero cables, and it separates the
-   three possible answers rather than two, because a voice that is *attenuated* into the
-   main mix rather than removed from it would sound present to the ear and show up plainly
-   as a level.
+   **Half-answered by run 22, and it needed no cables.** Eleven keygroups on one tone,
+   identical in every byte but 19, read as levels on the outputs already connected:
+
+   ```
+   panel     0     1     2     3     4     5     6     7     8     9    10
+           ALL  MONO1 MONO2 MONO3 MONO4 MONO5 MONO6 MONO7 MONO8  LEFT RIGHT
+   dB     -0.2  -0.2  -0.2  -0.4  -0.1  -0.3   0.0  -0.1  -0.4  -0.2  -0.3
+   ```
+
+   **MONO 1–8 do not leave the main pair.** All eight read the same as ALL, to 0.4 dB, so
+   the 253 library keygroups routed to individual outputs are present in the main mix and
+   "centred" is not silently wrong. That is the part that was a guess and it is settled.
+
+   **LEFT and RIGHT are not settled, and the controls say why.** They were in the section
+   precisely to qualify it: every take here is mono, and if the recording were one socket
+   then a RIGHT-panned voice would vanish, while if it were a sum then ALL would sit 6 dB
+   above both. Neither happened — all three read alike. The likely cause is jack
+   normalling, where an unplugged RIGHT socket makes LEFT carry the sum, which makes panning
+   invisible to this recording by construction. Settling it needs either both sockets
+   recorded as a stereo pair, or a plug in RIGHT to break the normalling.
 
 ## Sample-accurate events
 
