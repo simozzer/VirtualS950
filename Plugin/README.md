@@ -424,13 +424,16 @@ and an editor worth looking at — are all done. What is left is measurement, no
    the 253 library keygroups routed to individual outputs are present in the main mix and
    "centred" is not silently wrong. That is the part that was a guess and it is settled.
 
-   **LEFT and RIGHT are not settled, and the controls say why.** They were in the section
-   precisely to qualify it: every take here is mono, and if the recording were one socket
-   then a RIGHT-panned voice would vanish, while if it were a sum then ALL would sit 6 dB
-   above both. Neither happened — all three read alike. The likely cause is jack
-   normalling, where an unplugged RIGHT socket makes LEFT carry the sum, which makes panning
-   invisible to this recording by construction. Settling it needs either both sockets
-   recorded as a stereo pair, or a plug in RIGHT to break the normalling.
+   **LEFT and RIGHT stay hard-panned, as a deliberate choice rather than an open question.**
+   Run 22 could not read them: every take here is mono, and if the recording were one socket
+   a RIGHT-panned voice would have vanished, while if it were a sum then ALL would have sat
+   6 dB above both. Neither happened — all three read alike, which is what jack normalling
+   does when nothing is plugged into RIGHT.
+
+   It is not being chased. The plugin is played through a stereo pair, `LEFT` and `RIGHT`
+   pan hard there, and that is what the panel names say they do. 38 keygroups across four
+   library programmes use them. Settling it properly would want a plug in the RIGHT socket
+   to break the normalling — worth a minute if anyone is curious, and nothing depends on it.
 
 ## Sample-accurate events
 
