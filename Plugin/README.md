@@ -193,6 +193,14 @@ Two places where it could not stay identical, both in `Engine`:
 The three things that were listed here — reading disks, saving the image into the project,
 and an editor worth looking at — are all done. What is left is measurement, not code:
 
+0. **Positional crossfade is not modelled, and overlapping keygroups play at full level.**
+   Program header byte 21. **48 of the 390 library programmes have it on and have keygroups
+   whose key ranges overlap** — and they are the multi-sampled instruments, GRAND-PNO1 and 2
+   with nine keygroups apiece, GRANDX, CB CEL VL. Where the hardware fades one sample into the
+   next across the overlap, all three engines sound both at full level: about 6 dB too loud
+   there, and two different recordings of the same note beating against each other. Likely to
+   be the first thing anyone notices when comparing a real piano programme against the plugin,
+   and nothing here has measured the shape of the fade.
 1. **`ENV_TIME` is about 20% slow around stored 45.** Run 9 measured the release span as a
    constant 41.0 dB (spread 0.7) at twelve settings from stored 20 to 95 — but the four clips
    landing near stored 45 imply 49.3. Same place, same direction and same size as the
@@ -203,7 +211,10 @@ and an editor worth looking at — are all done. What is left is measurement, no
    from the fifth calibration run say so: the static corners of a negative-amount clip, and
    the travel of a full-depth release. Neither was the run's purpose, so neither is clean
    enough to change a constant on.
-2. **`SustainDb` says a decay bottoms out 39.6 dB down, and the hardware falls at least 77.**
+2a. **`SustainDb` says a decay bottoms out 39.6 dB down, and the hardware falls at least 77.**
+   It reaches further than the others: **1907 of the 1908 library keygroups set a decay, and
+   723 of them decay to a sustain of 20 or less** — every plucked and struck sound there is.
+   A note that should die away stops 39.6 dB down instead and sits there.
    "At least" is as far as it goes: −77 dB is where the recording's noise floor sat. The
    measurement at sustain 50 is unaffected and still right.
 3. **Both velocity sensitivities are modelled now**, and they do not share a shape. Byte 9
