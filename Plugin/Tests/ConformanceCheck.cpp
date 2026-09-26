@@ -138,6 +138,28 @@ namespace
             same (what, s950::cal::bendRatio (b.wheel, b.range), b.ratio, 1e-12);
         }
 
+        std::printf ("\n  the sustain plateau, %d settings\n",
+                     static_cast<int> (std::size (reference::sustains)));
+
+        for (const auto& p : reference::sustains)
+        {
+            char what[80];
+            std::snprintf (what, sizeof (what), "sustain %d", p.stored);
+            same (what, s950::cal::sustainDbFor (p.stored), p.db, 1e-9);
+        }
+
+        std::printf ("\n  the amplitude decay, %d combinations\n",
+                     static_cast<int> (std::size (reference::decays)));
+
+        for (const auto& d : reference::decays)
+        {
+            char what[96];
+            std::snprintf (what, sizeof (what), "decay %d to sustain %d", d.decay, d.sustain);
+            same (what,
+                  s950::cal::vcaDecaySeconds (d.decay, s950::cal::sustainDbFor (d.sustain)),
+                  d.seconds, 1e-9);
+        }
+
         std::printf ("\n  the positional crossfade table, %d points\n",
                      static_cast<int> (std::size (reference::xfadePoints)));
 

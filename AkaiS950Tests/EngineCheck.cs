@@ -52,17 +52,38 @@ static class EngineCheck
         CheckCutoff(50, 20000, 2210.000);
         CheckCutoff(99, 20000, 7400.000);
 
-        // The measured points of Cal.EnvTime, and the interpolation between them. 70, 80, 90
-        // and 95 are measurements; 0 and 99 are the fitted slope carried past the last of
-        // them, and 20 and 50 are interpolation across the long unmeasured gap at the bottom.
+        // The measured points of Cal.EnvTime. 20 and 50 USED to be interpolation across the
+        // long unmeasured gap at the bottom, and this test pinned those interpolated values
+        // - which is how it should have behaved, and it duly failed when run 19 measured
+        // the gap and found them 26% and 14% slow. They are measurements now. 25 is here as
+        // well because it is where the old guess was furthest out, by 31%.
         CheckEnv(0, 0.010400);
-        CheckEnv(20, 0.042761);
-        CheckEnv(50, 0.356500);
+        CheckEnv(20, 0.031660);
+        CheckEnv(25, 0.041820);
+        CheckEnv(50, 0.306970);
         CheckEnv(70, 1.403700);
         CheckEnv(80, 2.813600);
         CheckEnv(90, 4.117200);
         CheckEnv(95, 8.094700);
         CheckEnv(99, 10.740100);
+
+        // The two rules run 19 changed. A stored sustain of 0 is SILENCE, not the bottom of
+        // the line the rest sit on; and the decay is a RATE, so its length scales with the
+        // drop it has to cover rather than being the same at every depth.
+        Check("sustain 99 rests at full level",
+              Near(Cal.SustainDbFor(99), 0.0, 1e-9), F(Cal.SustainDbFor(99), 2));
+        Check("sustain 50 rests 19.6 dB down",
+              Near(Cal.SustainDbFor(50), -19.6, 0.05), F(Cal.SustainDbFor(50), 2));
+        Check("sustain 0 is silence, not 39.6 dB down",
+              Cal.SustainDbFor(0) < -90.0, F(Cal.SustainDbFor(0), 2));
+
+        double deep = Cal.VcaDecaySeconds(65, Cal.SustainDbFor(0));
+        double half = Cal.VcaDecaySeconds(65, Cal.SustainDbFor(50));
+        Check("a decay to sustain 50 is shorter than one to sustain 0",
+              half < deep * 0.5, F(half, 3) + "s against " + F(deep, 3) + "s");
+        Check("and both fall at the same rate, which is what a RATE means",
+              Near(-Cal.SustainDbFor(0) / deep, -Cal.SustainDbFor(50) / half, 1e-6),
+              F(-Cal.SustainDbFor(0) / deep, 1) + " dB/s");
 
         // The VCA attack is a counter, not a curve: 5.4/n for whole n. These are the measured
         // settings, and the pairs that share an n are the point - 70 and 75, 80 and 85, and

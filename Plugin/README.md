@@ -235,22 +235,44 @@ and an editor worth looking at — are all done. What is left is measurement, no
      so the machine is not saturating while the ratio is read.
    - **Nobody has measured what byte 21 = 0 does to an overlap.** Both keygroups at full level
      is the assumption and what the engines do. One section on a future disk settles it.
-1. **`ENV_TIME` is about 20% slow around stored 45.** Run 9 measured the release span as a
-   constant 41.0 dB (spread 0.7) at twelve settings from stored 20 to 95 — but the four clips
-   landing near stored 45 imply 49.3. Same place, same direction and same size as the
-   velocity-release fit's worst misses, so it is the curve rather than either rule. The table
-   has no measured point between 0 and 50, which is where this falls; one run with a few
-   settings in that gap would close it.
+1. **`EnvTime`'s fifty-byte gap is measured, and it was out by up to 35%.** Run 19 walked a
+   release ladder and a decay ladder across stored 15 to 55; the two agree rung for rung to
+   1.5%, so it is one curve. The old guess was 26% slow at stored 20, 31% at 25, 22% at 45.
+
+   **It is not smooth, which is why no interpolation could have found it.** Ten stored units
+   double the time, seven times over (×2.079 to ×2.185) — but the two five-unit steps inside
+   each decade alternate ×1.60 then ×1.34, four times each, on both ladders independently. An
+   even split would be ×1.463 twice. That is the same counter signature the VCA attack has.
+
+   The old "20% slow around stored 45" was the symptom: the table's **anchor at stored 50 was
+   16% slow**, so everything interpolated below it inherited the error. `VcaReleaseDb` moved
+   40 → 42.5 with it, from the two run-9 anchors that survived the limiter because they are
+   corner *frequencies* rather than levels.
+
+   Still open: **0 to 15**. The fall at stored 15 is over in nine milliseconds, as short as an
+   rms window can time. Reaching below it wants the amplitude tracked by Goertzel on a tone —
+   a different rig, and a small span: the measured endpoint at stored 0 brackets it.
 2. **`EnvOctaves` is probably 8.5 when it should be nearer 7.8.** Two independent readings
    from the fifth calibration run say so: the static corners of a negative-amount clip, and
    the travel of a full-depth release. Neither was the run's purpose, so neither is clean
    enough to change a constant on.
-2a. **`SustainDb` says a decay bottoms out 39.6 dB down, and the hardware falls at least 77.**
-   It reaches further than the others: **1907 of the 1908 library keygroups set a decay, and
-   723 of them decay to a sustain of 20 or less** — every plucked and struck sound there is.
-   A note that should die away stops 39.6 dB down instead and sits there.
-   "At least" is as far as it goes: −77 dB is where the recording's noise floor sat. The
-   measurement at sustain 50 is unaffected and still right.
+2a. **Done — a sustain of 0 is silence, and the decay is a rate.** This used to read "a decay
+   bottoms out 39.6 dB down where the hardware falls at least 77", and it mattered more than
+   anything else on the list: **1907 of the 1908 library keygroups set a decay and 723 decay
+   to a sustain of 20 or less**, so every plucked and struck sound on every disk stopped dead
+   39.6 dB up and sat there ringing.
+
+   Run 19 settled both halves. The plateau is a straight line in decibels from stored 99 down
+   to stored 5, twelve settings at 0.39–0.40 dB per unit — so `SustainDb` 39.6, which is
+   exactly 0.4 per unit, is **confirmed rather than changed**. A stored 0 is not on that line
+   at all: it falls straight past, hovers in the 12-bit quantisation around −60 dB and then
+   goes to the floor, between 90 and 96 dB down. `VcaSilenceDb` is 96.0 — 240 steps of 0.4,
+   the machine's own decibel step.
+
+   And the decay turned out to be a **rate, not a duration**: holding it at stored 65 and
+   moving the sustain through twelve depths gave 48.2 dB/s at every one. A duration would put
+   every plateau at the same moment whatever its depth. The filter's decay is still modelled
+   as a duration — that is where the rule came from, and it has never been measured.
 3. **Both velocity sensitivities are modelled now**, and they do not share a shape. Byte 9
    shortens the attack with no pivot at all — velocity 1 leaves the byte where it is. Byte 10
    turns the release about velocity 64, so a soft strike lengthens it where a hard one shortens

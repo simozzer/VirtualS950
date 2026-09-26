@@ -143,15 +143,19 @@ namespace s950
         attack      = cal::vcaAttackSeconds (
                           cal::velocityAttackByte (trimmed (kg->vcaAttack, trims.vcaAttack),
                                                    kg->velToAttack, velocity));
-        decay       = cal::envSeconds (trimmed (kg->vcaDecay,   trims.vcaDecay));
         releaseTime = cal::envSeconds (
                           cal::velocityReleaseByte (trimmed (kg->vcaRelease, trims.vcaRelease),
                                                     kg->velToRelease, velocity,
                                                     kg->velocityReleaseOn));
 
-        const double sustainDb =
-            -(1.0 - trimmed (kg->vcaSustain, trims.vcaSustain) / 99.0) * cal::SustainDb;
+        // A stored sustain of ZERO is silence, and is not the bottom of the line the other
+        // settings sit on - see cal::VcaSilenceDb. It used to stop 39.6 dB down and hang
+        // there, on 723 of the library's keygroups. The decay is a RATE, so how long it
+        // takes depends on how far it has to go - see cal::vcaDecaySeconds.
+        const double sustainDb = cal::sustainDbFor (trimmed (kg->vcaSustain, trims.vcaSustain));
         sustain = peak * cal::dbToGain (sustainDb);
+
+        decay = cal::vcaDecaySeconds (trimmed (kg->vcaDecay, trims.vcaDecay), sustainDb);
 
         /*
          * An S900 programme left its four VCF bytes blank: it has no filter envelope at all,

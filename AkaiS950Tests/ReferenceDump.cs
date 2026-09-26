@@ -193,6 +193,46 @@ static class ReferenceDump
         s.AppendLine("    };");
         s.AppendLine();
 
+        // --------------------------------------------- the amplitude decay and sustain
+
+        /*
+         * The two rules run 19 changed, at every combination that could separate them.
+         *
+         * STORED 0 IS IN THE GRID AND IS THE POINT OF IT. A port that keeps the old rule -
+         * sustain as a straight line all the way down - lands 56 dB out there and matches
+         * everywhere else, which is exactly the kind of difference that hides until someone
+         * plays a plucked sound.
+         *
+         * The decay times matter because a DURATION and a RATE agree only at sustain 0: at
+         * every other depth a rate gets there sooner, in proportion to the drop.
+         */
+        s.AppendLine("    // sustainDbFor (stored) -> how far below full level the plateau rests");
+        s.AppendLine("    struct SustainPoint { int stored; double db; };");
+        s.AppendLine();
+        s.AppendLine("    inline constexpr SustainPoint sustains[] =");
+        s.AppendLine("    {");
+
+        for (int sustainByte = 0; sustainByte <= 99; sustainByte++)
+            s.AppendLine("        { " + sustainByte + ", " +
+                         F(Cal.SustainDbFor(sustainByte)) + " },");
+
+        s.AppendLine("    };");
+        s.AppendLine();
+
+        s.AppendLine("    // vcaDecaySeconds (stored, sustainDb) -> how long the decay takes");
+        s.AppendLine("    struct DecayCase { int decay, sustain; double seconds; };");
+        s.AppendLine();
+        s.AppendLine("    inline constexpr DecayCase decays[] =");
+        s.AppendLine("    {");
+
+        foreach (int dec in new[] { 0, 15, 25, 40, 50, 65, 70, 85, 99 })
+            foreach (int sus in new[] { 0, 1, 10, 30, 50, 70, 90, 99 })
+                s.AppendLine("        { " + dec + ", " + sus + ", " +
+                             F(Cal.VcaDecaySeconds(dec, Cal.SustainDbFor(sus))) + " },");
+
+        s.AppendLine("    };");
+        s.AppendLine();
+
         // ------------------------------------------------- the positional crossfade
 
         /*

@@ -70,6 +70,13 @@ namespace AkaiS950Engine
         /// to the balance it started in for the same reason.
         /// </summary>
         double _crossfade = 1.0;
+
+        static double SustainDbFor(int stored) { return Cal.SustainDbFor(stored); }
+
+        static double DecaySecondsFor(int stored, double sustainDb)
+        {
+            return Cal.VcaDecaySeconds(stored, sustainDb);
+        }
         double _gain, _releaseFrom;
 
         // filter envelope
@@ -155,11 +162,14 @@ namespace AkaiS950Engine
             double depth = Clamp01(kg.VelToLoudness / 99.0);
             double velDb = -(127.0 - vel) * Cal.VelDbPerStep * depth;
             double zoneDb = kg.ZoneLoudness * Cal.LoudnessDbPerUnit;
-            double sustainDb = -(1.0 - Clamp01(kg.VcaSustain / 99.0)) * Cal.SustainDb;
+            // A stored sustain of ZERO is silence, and is not the bottom of the line the
+            // other settings sit on - see Cal.VcaSilenceDb. It used to stop 39.6 dB down
+            // and hang there, on 723 of the library's keygroups.
+            double sustainDb = SustainDbFor(kg.VcaSustain);
 
             _attack = Cal.VcaAttackSeconds(
                           Cal.VelocityAttackByte(kg.VcaAttack, kg.VelToAttack, _velocity));
-            _decay = Cal.EnvSeconds(kg.VcaDecay);
+            _decay = DecaySecondsFor(kg.VcaDecay, sustainDb);
             _release = Cal.EnvSeconds(
                            Cal.VelocityReleaseByte(kg.VcaRelease, kg.VelToRelease,
                                                    _velocity, kg.VelocityReleaseOn));
@@ -248,11 +258,11 @@ namespace AkaiS950Engine
             double depth = Clamp01(kg.VelToLoudness / 99.0);
             double velDb = -(127.0 - _velocity) * Cal.VelDbPerStep * depth;
             double zoneDb = kg.ZoneLoudness * Cal.LoudnessDbPerUnit;
-            double sustainDb = -(1.0 - Clamp01(kg.VcaSustain / 99.0)) * Cal.SustainDb;
+            double sustainDb = SustainDbFor(kg.VcaSustain);
 
             _attack = Cal.VcaAttackSeconds(
                           Cal.VelocityAttackByte(kg.VcaAttack, kg.VelToAttack, _velocity));
-            _decay = Cal.EnvSeconds(kg.VcaDecay);
+            _decay = DecaySecondsFor(kg.VcaDecay, sustainDb);
             _release = Cal.EnvSeconds(
                            Cal.VelocityReleaseByte(kg.VcaRelease, kg.VelToRelease,
                                                    _velocity, kg.VelocityReleaseOn));

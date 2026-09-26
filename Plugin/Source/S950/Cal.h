@@ -121,11 +121,46 @@ namespace s950::cal
      */
     struct EnvPoint { double stored, seconds; };
 
+    /*
+     * RUN 19 FILLED THE GAP FROM 15 TO 55, AND THE TABLE WAS OUT BY UP TO 35% IN IT.
+     *
+     * There used to be nothing measured between stored 0 and 50 - a fifty-byte hole holding
+     * two in five of the VCA releases on the real disks, filled by interpolating
+     * geometrically between the ends. Run 19 walked a release ladder and a decay ladder
+     * across it; they agree rung for rung to 1.5%, so EnvTime is one curve and this is it:
+     *
+     *     stored        15     20     25     30     35     40     45     50     55
+     *     measured  .01963 .03166 .04182 .06582 .08949 .14385 .19504 .30697 .41063
+     *     the guess .03003 .04276 .06089 .08671 .12347 .17581 .25036 .35650 .41840
+     *     out by      -35%   -26%   -31%   -24%   -28%   -18%   -22%   -14%    -2%
+     *
+     * IT IS NOT SMOOTH, WHICH IS WHY NO INTERPOLATION COULD HAVE FOUND IT. Ten stored units
+     * double the time, seven times over - x2.079 to x2.185 - but the two five-unit steps
+     * inside each decade are nothing like equal halves of that:
+     *
+     *     15->20 x1.613   20->25 x1.321      35->40 x1.607   40->45 x1.356
+     *     25->30 x1.574   30->35 x1.360      45->50 x1.574   50->55 x1.338
+     *
+     * An even split would be x1.463 twice. It alternates 1.60 then 1.34, four times each,
+     * on both ladders independently - the same counter signature the VCA attack has.
+     *
+     * THE STORED-50 ANCHOR WAS THE ONE THAT WAS WRONG. Every value here is a measured RATE
+     * in dB per second turned into a time by VcaReleaseDb. Run 9's anchors are times, from
+     * tracking the filter's corner, so they are frequencies and the limiter that spoilt its
+     * levels left them alone - and two of three agree with run 19 on the span: stored 55
+     * implies 43.3 dB and stored 65 implies 42.4, against stored 50's 49.3. So 50 was 16%
+     * slow, everything interpolated below it inherited that, and the 20% error found around
+     * stored 45 during the crossfade work was the edge of it.
+     *
+     * 0 to 15 is still interpolated, across a stretch now known to step rather than glide.
+     */
     inline constexpr EnvPoint EnvTime[] =
     {
-        {  0, 0.01040 }, { 50, 0.3565 }, { 55, 0.4184 }, { 60, 0.7224 }, { 65, 0.8806 },
-        { 70, 1.4037 }, { 80, 2.8136 }, { 85, 4.0370 }, { 90, 4.1172 }, { 95, 8.0947 },
-        { 99, 10.7401 }
+        {  0, 0.01040 }, { 15, 0.01963 }, { 20, 0.03166 }, { 25, 0.04182 },
+        { 30, 0.06582 }, { 35, 0.08949 }, { 40, 0.14385 }, { 45, 0.19504 },
+        { 50, 0.30697 }, { 55, 0.41063 }, { 60, 0.7224 }, { 65, 0.8806 },
+        { 70, 1.4037 }, { 80, 2.8136 }, { 85, 4.0370 }, { 90, 4.1172 },
+        { 95, 8.0947 }, { 99, 10.7401 }
     };
 
     inline constexpr int EnvTimeCount = static_cast<int> (std::size (EnvTime));
@@ -267,15 +302,48 @@ namespace s950::cal
      * release ran at twice the machine's speed: 699 ms against 1366 at stored 70, on every
      * programme rather than only those with a velocity depth.
      *
-     * The four that miss are at stored 44.6 and 46 and imply 49.3 dB - the same place, the same
-     * direction and the same size as the velocity-release fit's worst misses, so EnvTime is
-     * about 20% slow around stored 45. Left alone: one bad setting in a nine-point measured
-     * table wants re-measuring, not a second constant over the top.
+     * THE FOUR THAT MISSED WERE THE CURVE, NOT THE SPAN - AND RUN 19 FOUND THEM. The clips
+     * near stored 45 implied 49.3 dB where the rest said 41, and this note used to say that
+     * meant EnvTime was 20% slow there and wanted re-measuring. It did, and it was: the
+     * table's anchor at stored 50 was 16% slow, so everything interpolated below it was
+     * wrong and clips landing there could not agree with clips landing anywhere else. See
+     * EnvTime.
+     *
+     * 40 -> 42.5 comes from the two anchors that survived. Run 9's times were measured by
+     * tracking the filter's corner, so they are frequencies and the limiter that spoilt its
+     * levels left them alone; run 19's rates are clean. Multiply them and stored 55 implies
+     * 43.3 dB, stored 65 implies 42.4, against stored 50's 49.3.
+     *
+     * This and EnvTime move together and their product does not: every rate run 19 measured
+     * is reproduced, and settings it did not reach improve too - at stored 65 the model now
+     * gives 48.3 dB/s where run 19 read 48.2, against 45.4 before.
      *
      * It is a RATE, so this is how far the level falls in one release time from wherever the
-     * key came up - not the distance it has to cover before it stops.
+     * key came up - not the distance it has to cover before it stops. The DECAY reads the
+     * same curve and the same span: run 19 measured both ladders at eight settings and they
+     * agree to 1.5%, so there is one number here, not two.
      */
-    inline constexpr double VcaReleaseDb = 40.0;
+    inline constexpr double VcaReleaseDb = 42.5;
+
+    /*
+     * WHERE A SUSTAIN OF ZERO ENDS UP: silence, not SustainDb down.
+     *
+     * The sustain plateau is a straight line in decibels from stored 99 down to stored 5,
+     * and a stored 0 is NOT on it. Run 19 traced one: it falls at the same rate as every
+     * other sustain setting, straight past where the line would stop it, hovers a moment in
+     * the 12-bit quantisation around -60 dB, then goes to the noise floor and stays.
+     * Between 1.873 s and 1.982 s at 48.2 dB/s, so 90 to 96 dB down.
+     *
+     * 96.0 dB is 240 steps of 0.4 exactly - the machine's own decibel step, the one the
+     * crossfade turned out to count in - and it sits inside that bracket.
+     *
+     * 1907 of the 1908 library keygroups set a decay and 723 decay to a sustain of 20 or
+     * less, so every plucked and struck sound on every disk is one of these. They used to
+     * stop dead 39.6 dB down and sit there ringing.
+     */
+    inline constexpr double VcaSilenceDb = 96.0;
+
+    // sustainDbFor and vcaDecaySeconds live further down, after clamp() is declared.
 
     /*
      * WARP - keygroup bytes 12, 13 and 14. A pitch bend at note-on, decaying back to pitch.
@@ -388,7 +456,19 @@ namespace s950::cal
     inline constexpr double LoudnessDbPerUnit = 0.29;
 
     /// Measured, at velToLoudness 99.
-    inline constexpr double VelDbPerStep = 0.63;
+    /*
+     * MEASURED DIRECTLY IN RUN 19, at a depth of 40 where every velocity stays well clear of
+     * the floor. Two keys sounding one keygroup alone, four velocity spans:
+     *
+     *     velocity      1      32      64      96
+     *     dB down    32.7    24.6    16.4     8.0
+     *     per step  0.6423  0.6409  0.6443  0.6387
+     *
+     * 0.642, and dead linear - 0.9% across a 33 dB slide. The old 0.63 came from a depth of
+     * 99, whose bottom two velocities sat at and under the noise floor of a take that was
+     * being limited anyway.
+     */
+    inline constexpr double VelDbPerStep = 0.642;
 
     // ----------------------------------------------------- the positional crossfade
 
@@ -744,6 +824,34 @@ namespace s950::cal
         if (cents == 0.0) return 1.0;
 
         return std::pow (2.0, cents * std::exp (-t / warpSeconds (time)) / 1200.0);
+    }
+
+    /*
+     * How far below full level a stored sustain rests. A stored 0 is silence rather than
+     * the bottom of the line the rest sit on - see VcaSilenceDb.
+     */
+    inline double sustainDbFor (double stored)
+    {
+        const double s = clamp (stored, 0.0, 99.0);
+        return s <= 0.0 ? -VcaSilenceDb : -(1.0 - s / 99.0) * SustainDb;
+    }
+
+    /*
+     * THE AMPLITUDE DECAY IS A RATE, NOT A DURATION, so how long it takes depends on how far
+     * it has to go.
+     *
+     * Run 19 held the decay at stored 65 and moved the sustain through twelve settings from
+     * 0 to 99. Every one fell at 48.2 dB per second - 0.415 s to lose twenty decibels at one
+     * end of the ladder against 0.414 at the other. A duration would have put every plateau
+     * at the same moment whatever its depth; a rate gets the shallow ones there sooner, and
+     * that is what the machine does.
+     *
+     * The FILTER's decay is still modelled as a duration. That is where this rule came from
+     * in the first place and it has never been measured.
+     */
+    inline double vcaDecaySeconds (double stored, double sustainDb)
+    {
+        return envSeconds (stored) * (-sustainDb) / VcaReleaseDb;
     }
 
     /*
